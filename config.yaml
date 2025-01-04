@@ -10,8 +10,8 @@ best_model:
   weight_decay: 0.0
 data:
   target_column: target
-  train_path: data/train.csv
-  val_path: data/val.csv
+  train_path: input_data/train.csv
+  val_path: input_data/val.csv
 logging:
   console_format: simple
   console_level: WARNING
