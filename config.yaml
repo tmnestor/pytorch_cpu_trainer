@@ -1,155 +1,166 @@
+# Best model parameters (populated after hyperparameter tuning)
 best_model:
-  best_metric_name: f1
-  best_metric_value: 0.310524788510722
-  dropout_rate: 0.4108305348910304
-  hidden_layers:
-  - 261
-  - 511
-  learning_rate: 0.0001
-  use_batch_norm: true
-  weight_decay: 0.0
+  best_metric_name: f1             # Name of the metric used for model selection
+  best_metric_value: 0.310524788510722  # Best achieved metric value
+  dropout_rate: 0.4108305348910304      # Optimal dropout rate found
+  hidden_layers:                        # Architecture of hidden layers
+  - 261                                 # Number of neurons in first hidden layer
+  - 511                                 # Number of neurons in second hidden layer
+  learning_rate: 0.0001                 # Optimal learning rate
+  use_batch_norm: true                  # Whether to use batch normalization
+  weight_decay: 0.0                     # L2 regularization strength
+
+# Data configuration
 data:
-  target_column: target
-  train_path: input_data/train.csv
-  val_path: input_data/val.csv
+  target_column: target                 # Name of the target column in datasets
+  train_path: input_data/train.csv      # Path to training data
+  val_path: input_data/val.csv          # Path to validation data
+
+# Logging configuration
 logging:
-  console_format: simple
-  console_level: WARNING
-  directory: logs
-  figures_dir: figures
-  file_level: INFO
-  handlers:
+  console_format: simple                # Format for console output (simple/detailed)
+  console_level: WARNING                # Minimum level for console logging
+  directory: logs                       # Directory for log files
+  figures_dir: figures                  # Directory for saving plots and figures
+  file_level: INFO                      # Minimum level for file logging
+  handlers:                             # Specific logging handlers
     cpu_optimization:
-      filename: cpu_optimization.log
-      level: DEBUG
+      filename: cpu_optimization.log    # Log file for CPU optimization
+      level: DEBUG                      # Logging level for CPU optimization
     hyperparameter_tuning:
-      filename: hyperparameter_tuning.log
-      level: INFO
+      filename: hyperparameter_tuning.log  # Log file for hyperparameter tuning
+      level: INFO                         # Logging level for hyperparameter tuning
     training:
-      filename: training.log
-      level: INFO
+      filename: training.log              # Log file for training process
+      level: INFO                         # Logging level for training
+
+# Model architecture configuration
 model:
-  input_size: 4
-  num_classes: 4
-  save_path: checkpoints/best_model.pt
+  input_size: 4                         # Number of input features
+  num_classes: 4                        # Number of output classes
+  save_path: checkpoints/best_model.pt  # Path to save best model
+
+# Optimization configuration
 optimization:
-  adaptive_strategy:
-    cycling:
-      cycle_length_epochs: 10
-      enabled: true
-      initial_cycles: 2
-    enabled: true
-    improvement_threshold: 0.001
-    min_lr_factor: 0.001
-    plateau:
-      enabled: true
-      patience: 5
-      reduction_factor: 0.5
-    strategy_switch_patience: 3
-  early_stopping:
-    min_delta: 0.001
-    patience: 10
-  n_trials: 50
-  optimization_metric: f1
-  regularization:
-    batch_norm_prob: 0.5
-    weight_decay_range:
-    - 1e-5
-    - 1e-2
-  warmup:
-    enabled: true
-    max_steps: 1000
-    min_steps: 0
+  adaptive_strategy:                    # Learning rate adaptation strategy
+    cycling:                           # Cyclic learning rate settings
+      cycle_length_epochs: 10          # Length of each learning rate cycle
+      enabled: true                    # Whether to use cyclic learning rates
+      initial_cycles: 2                # Number of initial warm-up cycles
+    enabled: true                      # Whether to use adaptive strategies
+    improvement_threshold: 0.001       # Minimum improvement to consider progress
+    min_lr_factor: 0.001              # Minimum LR as factor of initial LR
+    plateau:                          # Learning rate plateau detection
+      enabled: true                   # Whether to use plateau detection
+      patience: 5                     # Epochs to wait before reducing LR
+      reduction_factor: 0.5           # Factor to reduce LR by on plateau
+    strategy_switch_patience: 3        # Epochs before switching strategies
+  early_stopping:                      # Early stopping configuration
+    min_delta: 0.001                  # Minimum change to consider as improvement
+    patience: 10                       # Epochs to wait before early stopping
+  n_trials: 50                        # Number of hyperparameter optimization trials
+  optimization_metric: f1              # Metric to optimize during training
+  regularization:                      # Regularization settings
+    batch_norm_prob: 0.5              # Probability of using batch normalization
+    weight_decay_range:               # Range for weight decay search
+    - 1e-5                           # Minimum weight decay
+    - 1e-2                           # Maximum weight decay
+  warmup:                             # Learning rate warm-up settings
+    enabled: true                     # Whether to use LR warm-up
+    max_steps: 1000                   # Maximum warm-up steps
+    min_steps: 0                      # Minimum warm-up steps
+
+# Training configuration
 training:
-  batch_size: 64
-  checkpointing:
-    enabled: true
-    frequency: 10
-    max_checkpoints: 5
-    save_dir: checkpoints
-  cpu_optimization:
-    enable_mkldnn: true
-    num_threads: auto
-    use_bfloat16: true
-  dataloader:
-    num_workers: 8
-    persistent_workers: true
-    pin_memory: true
-    prefetch_factor: 2
-  device: cpu
-  drop_last: true
-  epochs: 100
-  loss_function: CrossEntropyLoss
-  memory_management:
-    enabled: true
-    optimization:
-      grad_accumulation:
-        enabled: true
-        max_steps: 8
-        min_steps: 1
-      initial_batch_size_factor: 2.0
-      min_batch_size: 1
-      target_memory_usage: 0.95
-    profiling:
-      enabled: true
-      export_profile: true
-      log_frequency: 100
-      profile_path: memory_profile.json
-  num_workers: 4
-  optimization_metric: f1
-  optimizer_choice: Adam
-  optimizer_params:
-    Adam:
-      betas:
-      - 0.9
-      - 0.999
-      eps: 1.0e-08
-      lr: 0.0001
-    SGD:
-      lr: 0.01
-      momentum: 0.9
-  performance:
-    batch_size_multiplier: 2
-    enable_mkl: true
-    enable_mkldnn: true
-    grad_accum_steps: 4
-    mixed_precision: true
-    num_workers: 8
-    persistent_workers: true
-    pin_memory: true
-    prefetch_factor: 2
-  profiling:
-    enabled: true
-    export_trace: true
-    trace_path: cpu_trace.json
-  scheduler:
-    params:
-      anneal_strategy: cos
-      div_factor: 25.0
-      final_div_factor: 1e4
-      max_lr_factor: 10.0
-      pct_start: 0.3
-    type: OneCycleLR
-  seed: 42
-  validation:
-    confidence_analysis:
-      enabled: true
-      thresholds:
-        high_confidence: 0.9
-        low_confidence: 0.6
-    cross_validation:
-      enabled: true
-      metrics:
+  batch_size: 64                      # Base batch size for training
+  checkpointing:                      # Model checkpointing settings
+    enabled: true                     # Whether to save checkpoints
+    frequency: 10                     # Epochs between checkpoints
+    max_checkpoints: 5               # Maximum number of checkpoints to keep
+    save_dir: checkpoints            # Directory for saving checkpoints
+  cpu_optimization:                   # CPU-specific optimizations
+    enable_mkldnn: true              # Enable Intel MKL-DNN
+    num_threads: auto                # Number of CPU threads (auto=use all)
+    use_bfloat16: true              # Use bfloat16 precision if available
+  dataloader:                        # DataLoader settings
+    num_workers: 8                   # Number of worker processes
+    persistent_workers: true         # Keep worker processes alive between epochs
+    pin_memory: true                # Pin memory for faster data transfer
+    prefetch_factor: 2              # Number of batches to prefetch
+  device: cpu                       # Device to use for training
+  drop_last: true                  # Whether to drop last incomplete batch
+  epochs: 100                      # Total number of training epochs
+  loss_function: CrossEntropyLoss  # Loss function to use
+  memory_management:               # Memory optimization settings
+    enabled: true                  # Whether to use memory optimization
+    optimization:                  # Memory optimization parameters
+      grad_accumulation:           # Gradient accumulation settings
+        enabled: true             # Whether to use gradient accumulation
+        max_steps: 8             # Maximum gradient accumulation steps
+        min_steps: 1             # Minimum gradient accumulation steps
+      initial_batch_size_factor: 2.0  # Factor for initial batch size search
+      min_batch_size: 1              # Minimum allowed batch size
+      target_memory_usage: 0.95      # Target memory utilization
+    profiling:                       # Memory profiling settings
+      enabled: true                  # Whether to profile memory usage
+      export_profile: true          # Whether to export memory profile
+      log_frequency: 100            # Frequency of memory logging
+      profile_path: memory_profile.json  # Path for memory profile export
+  num_workers: 4                     # Default number of worker processes
+  optimization_metric: f1            # Metric to optimize during training
+  optimizer_choice: Adam             # Choice of optimizer
+  optimizer_params:                  # Optimizer-specific parameters
+    Adam:                           # Adam optimizer settings
+      betas:                        # Adam beta parameters
+      - 0.9                        # Beta1
+      - 0.999                      # Beta2
+      eps: 1.0e-08                 # Epsilon for numerical stability
+      lr: 0.0001                   # Learning rate
+    SGD:                           # SGD optimizer settings
+      lr: 0.01                     # Learning rate
+      momentum: 0.9                # Momentum factor
+  performance:                      # Performance optimization settings
+    batch_size_multiplier: 2       # Multiplier for batch size
+    enable_mkl: true              # Enable Intel MKL
+    enable_mkldnn: true           # Enable Intel MKL-DNN
+    grad_accum_steps: 4           # Steps for gradient accumulation
+    mixed_precision: true         # Use mixed precision training
+    num_workers: 8               # Number of worker processes
+    persistent_workers: true     # Keep workers alive between epochs
+    pin_memory: true            # Pin memory for faster transfer
+    prefetch_factor: 2          # Number of batches to prefetch
+  profiling:                    # Training profiling settings
+    enabled: true              # Whether to enable profiling
+    export_trace: true        # Whether to export trace
+    trace_path: cpu_trace.json  # Path for trace export
+  scheduler:                    # Learning rate scheduler settings
+    params:                    # Scheduler parameters
+      anneal_strategy: cos     # Annealing strategy (cosine)
+      div_factor: 25.0        # Initial learning rate division factor
+      final_div_factor: 1e4   # Final learning rate division factor
+      max_lr_factor: 10.0     # Maximum learning rate factor
+      pct_start: 0.3          # Percentage of training for warm-up
+    type: OneCycleLR          # Type of scheduler
+  seed: 42                    # Random seed for reproducibility
+  validation:                 # Validation settings
+    confidence_analysis:      # Prediction confidence analysis
+      enabled: true          # Whether to analyze prediction confidence
+      thresholds:           # Confidence thresholds
+        high_confidence: 0.9  # Threshold for high confidence
+        low_confidence: 0.6   # Threshold for low confidence
+    cross_validation:         # Cross-validation settings
+      enabled: true          # Whether to use cross-validation
+      metrics:              # Metrics to evaluate during cross-validation
       - accuracy
       - f1_score
       - precision
       - recall
-      n_splits: 5
-    error_analysis:
-      analyze_misclassifications: true
-      enabled: true
-      save_confusion_matrix: true
-    frequency: 1
-    metrics:
+      n_splits: 5           # Number of cross-validation folds
+    error_analysis:         # Error analysis settings
+      analyze_misclassifications: true  # Whether to analyze wrong predictions
+      enabled: true                     # Whether to perform error analysis
+      save_confusion_matrix: true       # Whether to save confusion matrix
+    frequency: 1                        # Validation frequency (epochs)
+    metrics:                           # Metrics to track during validation
     - accuracy
     - f1_score
