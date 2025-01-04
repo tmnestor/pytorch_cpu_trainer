@@ -164,3 +164,38 @@ training:
     metrics:                           # Metrics to track during validation
     - accuracy
     - f1_score
+  metrics:
+    primary: f1_score      # Primary metric for optimization
+    available:            # List of available metrics
+      accuracy:
+        name: MulticlassAccuracy
+        params:
+          average: micro
+      f1_score:
+        name: MulticlassF1Score
+        params:
+          average: macro
+      precision:
+        name: MulticlassPrecision
+        params:
+          average: macro
+      recall:
+        name: MulticlassRecall
+        params:
+          average: macro
+      auroc:
+        name: MulticlassAUROC
+        params:
+          average: macro
+      cohen_kappa:
+        name: MulticlassCohenKappa
+      specificity:
+        name: MulticlassSpecificity
+      confusion_matrix:
+        name: MulticlassConfusionMatrix
+    tracked:             # Metrics to track during training
+      - accuracy
+      - f1_score
+      - precision
+      - recall
+      - confusion_matrix

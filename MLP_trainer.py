@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import tqdm
 import logging
 import warnings
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any, Union
 import platform
 import time  # Add this import
 
@@ -29,7 +29,7 @@ from rich.text import Text
 import seaborn as sns
 import matplotlib.pyplot as plt
 import yaml
-from sklearn.metrics import f1_score, confusion_matrix, classification_report
+from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.model_selection import KFold
 
 
@@ -43,7 +43,6 @@ import psutil
 import optuna
 from torch.optim.lr_scheduler import OneCycleLR, LinearLR, ReduceLROnPlateau
 from torch.optim import Optimizer
-from typing import Optional, Dict, Any
 
 import contextlib
 import tempfile
@@ -70,6 +69,9 @@ try:
     PROFILER_AVAILABLE = True
 except ImportError:
     PROFILER_AVAILABLE = False
+
+import torchmetrics
+import inspect
 
 class SafeProfiler:
     """Safe profiler wrapper with graceful fallbacks"""
@@ -1044,6 +1046,12 @@ class PyTorchTrainer:
 
         self.memory_manager = MemoryManager(config, self.logger)
 
+        self.metrics = MetricsManager(
+            config=config,
+            num_classes=config['model']['num_classes'],
+            device=device
+        )
+
     def setup_warmup_scheduler(self, num_training_steps):
         """Setup the learning rate scheduler with warmup."""
         if self.warmup_steps > 0:
@@ -1082,12 +1090,12 @@ class PyTorchTrainer:
                 lr_history.append(current_lr)
                 
                 # Train and evaluate
-                train_loss, train_accuracy = self.train_epoch(train_loader)
-                val_loss, val_accuracy, val_f1 = self.evaluate(val_loader)
+                train_loss, train_metrics = self.train_epoch(train_loader)
+                val_loss, val_metrics = self.evaluate(val_loader)
                 
                 # Update metrics and progress
-                train_metric = train_accuracy
-                val_metric = val_f1 if metric == 'f1' else val_accuracy
+                train_metric = train_metrics[metric]
+                val_metric = val_metrics[metric]
                 
                 train_losses.append(train_loss)
                 val_losses.append(val_loss)
@@ -1172,8 +1180,7 @@ class PyTorchTrainer:
         """Trains the model for one epoch with memory optimizations"""
         self.model.train()
         total_loss = 0
-        correct = 0
-        total = 0
+        self.metrics.reset()
         
         # Use the safer profiling context
         with self.memory_manager.start_memory_profiling():
@@ -1193,29 +1200,26 @@ class PyTorchTrainer:
                     self.optimizer.step()
                     self.optimizer.zero_grad()
                 
+                # Update metrics with logits instead of class predictions
+                self.metrics.update(outputs, batch_y)
+                
                 # Update metrics
                 total_loss += loss.item() * self.memory_manager.grad_accum_steps
-                _, predicted = torch.max(outputs.data, 1)
-                total += batch_y.size(0)
-                correct += (predicted == batch_y).sum().item()
                 
                 # Periodically log memory stats
                 if batch_idx % 100 == 0:
                     self.memory_manager.log_memory_stats()
         
         epoch_loss = total_loss / len(train_loader)
-        epoch_accuracy = 100. * correct / total
+        metrics = self.metrics.compute_all()
         
-        return epoch_loss, epoch_accuracy
+        return epoch_loss, metrics
 
     def evaluate(self, val_loader):
         """Evaluates the model on validation data."""
         self.model.eval()
         total_loss = 0
-        all_preds = []
-        all_labels = []
-        correct = 0
-        total = 0
+        self.metrics.reset()
         
         with torch.no_grad():
             for batch_X, batch_y in val_loader:
@@ -1223,16 +1227,11 @@ class PyTorchTrainer:
                 outputs = self.model(batch_X)
                 loss = self.criterion(outputs, batch_y)
                 total_loss += loss.item()
-                _, predicted = torch.max(outputs.data, 1)
-                total += batch_y.size(0)
-                correct += (predicted == batch_y).sum().item()
                 
-                all_preds.extend(predicted.cpu().numpy())
-                all_labels.extend(batch_y.cpu().numpy())
+                self.metrics.update(outputs, batch_y)
         
-        accuracy = 100 * correct / total
-        f1 = f1_score(all_labels, all_preds, average='weighted')
-        return total_loss / len(val_loader), accuracy, f1
+        metrics = self.metrics.compute_all()
+        return total_loss / len(val_loader), metrics
 
 class HyperparameterTuner:
     def __init__(self, config):
@@ -1434,9 +1433,9 @@ class HyperparameterTuner:
         
         for epoch in range(self.config['training']['epochs']):
             trainer.train_epoch(train_loader)
-            _, accuracy, f1 = trainer.evaluate(val_loader)
+            _, metrics = trainer.evaluate(val_loader)
             
-            metric = f1 if self.config['training']['optimization_metric'] == 'f1' else accuracy
+            metric = metrics[self.config['training']['optimization_metric']]
             trial.report(metric, epoch)
             
             # Enhanced early stopping logic with detailed logging
@@ -1957,6 +1956,70 @@ class AdaptiveOptimizer:
                 self.current_strategy = 'cycle'
                 self._setup_cycle()
 
+class MetricsManager:
+    """Manages multiple torchmetrics for multi-class classification"""
+    def __init__(self, config: Dict[str, Any], num_classes: int, device: str = 'cpu'):
+        self.config = config
+        self.num_classes = num_classes
+        self.device = device
+        self.logger = logging.getLogger('MetricsManager')
+        self.metrics: Dict[str, torchmetrics.Metric] = {}
+        self._initialize_metrics()
+        
+    def _initialize_metrics(self) -> None:
+        """Initialize metrics based on config"""
+        available_metrics = self.config['training']['metrics']['available']
+        tracked_metrics = self.config['training']['metrics']['tracked']
+        
+        for metric_key in tracked_metrics:
+            if metric_key not in available_metrics:
+                self.logger.warning(f"Metric {metric_key} not found in available metrics")
+                continue
+                
+            metric_config = available_metrics[metric_key]
+            metric_class = getattr(torchmetrics.classification, metric_config['name'])
+            params = metric_config.get('params', {})
+            
+            # Add num_classes to params if the metric class accepts it
+            if 'num_classes' in inspect.signature(metric_class).parameters:
+                params['num_classes'] = self.num_classes
+            
+            try:
+                metric = metric_class(**params).to(self.device)
+                self.metrics[metric_key] = metric
+                self.logger.debug(f"Initialized metric: {metric_key}")
+            except Exception as e:
+                self.logger.error(f"Failed to initialize metric {metric_key}: {e}")
+
+    def update(self, preds: torch.Tensor, targets: torch.Tensor) -> None:
+        """Update all metrics with predictions and targets"""
+        for metric in self.metrics.values():
+            metric.update(preds, targets)
+
+    def compute_all(self) -> Dict[str, Union[float, torch.Tensor]]:
+        """Compute and return all metrics"""
+        results = {}
+        for name, metric in self.metrics.items():
+            try:
+                value = metric.compute()
+                results[name] = value.item() if torch.is_tensor(value) else value
+            except Exception as e:
+                self.logger.error(f"Error computing metric {name}: {e}")
+                results[name] = float('nan')
+        return results
+
+    def get_primary_metric(self) -> float:
+        """Get the primary metric value"""
+        primary = self.config['training']['metrics']['primary']
+        if primary not in self.metrics:
+            raise ValueError(f"Primary metric {primary} not found in tracked metrics")
+        return self.metrics[primary].compute().item()
+
+    def reset(self) -> None:
+        """Reset all metrics"""
+        for metric in self.metrics.values():
+            metric.reset()
+
 def main():
     config_path = 'config.yaml'
     config = load_config(config_path)
@@ -2106,26 +2169,26 @@ def main():
     
     # Evaluate restored model
     print("\nEvaluating restored model on validation set...")
-    val_loss, val_accuracy, val_f1 = trainer.evaluate(val_loader)
+    val_loss, val_metrics = trainer.evaluate(val_loader)
     
     metric_name = config['training']['optimization_metric']
-    metric_value = val_f1 if metric_name == 'f1' else val_accuracy
+    metric_value = val_metrics[metric_name]
     
     print(f"\nRestored model performance:")
     print(f"Validation Loss: {val_loss:.4f}")
-    print(f"Validation Accuracy: {val_accuracy:.2f}%")
-    print(f"Validation F1-Score: {val_f1:.4f}")
+    print(f"Validation Accuracy: {val_metrics['accuracy']:.2f}%")
+    print(f"Validation F1-Score: {val_metrics['f1']:.4f}")
     print(f"\nBest {metric_name.upper()} from tuning: {restored['metric_value']:.4f}")
     print(f"Current {metric_name.upper()}: {metric_value:.4f}")
     
     # First run standard evaluation
     print("\nStandard Model Evaluation:")
-    val_loss, val_accuracy, val_f1 = trainer.evaluate(val_loader)
+    val_loss, val_metrics = trainer.evaluate(val_loader)
     
     print(f"\nBasic Performance Metrics:")
     print(f"Validation Loss: {val_loss:.4f}")
-    print(f"Validation Accuracy: {val_accuracy:.2f}%")
-    print(f"Validation F1-Score: {val_f1:.4f}")
+    print(f"Validation Accuracy: {val_metrics['accuracy']:.2f}%")
+    print(f"Validation F1-Score: {val_metrics['f1']:.4f}")
     print(f"\nBest {metric_name.upper()} from tuning: {restored['metric_value']:.4f}")
     print(f"Current {metric_name.upper()}: {metric_value:.4f}")
     
