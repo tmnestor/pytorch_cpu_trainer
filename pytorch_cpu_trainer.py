@@ -748,8 +748,12 @@ class MLPClassifier(nn.Module):
             layers.append(nn.Linear(prev_size, hidden_size))
             if use_batch_norm:
                 bn = nn.BatchNorm1d(hidden_size)
+                # Explicitly register buffers for each BatchNorm layer
+                self.register_buffer(f'bn_{i}_running_mean', bn.running_mean)
+                self.register_buffer(f'bn_{i}_running_var', bn.running_var)
+                self.register_buffer(f'bn_{i}_num_batches_tracked', bn.num_batches_tracked)
                 layers.append(bn)
-                self.bn_layers[f'bn_{i}'] = bn  # Register BatchNorm layer
+                self.bn_layers[f'bn_{i}'] = bn
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(dropout_rate))
             prev_size = hidden_size
@@ -766,9 +770,11 @@ class MLPClassifier(nn.Module):
         stats = {}
         if self.use_batch_norm:
             for name, layer in self.bn_layers.items():
+                # Access the registered buffers directly
                 stats[name] = {
-                    'mean': layer.running_mean.clone(),
-                    'var': layer.running_var.clone(),
+                    'running_mean': getattr(self, f'{name}_running_mean').cpu().clone().detach(),
+                    'running_var': getattr(self, f'{name}_running_var').cpu().clone().detach(),
+                    'num_batches_tracked': getattr(self, f'{name}_num_batches_tracked').cpu().clone().detach()
                 }
         return stats
     
@@ -970,8 +976,17 @@ class CheckpointManager:
             
             state_dict = {
                 'optimizer_state_dict': optimizer.state_dict(),
-                'bn_stats': model.get_bn_statistics() if hasattr(model, 'get_bn_statistics') else None
+                'bn_stats': None
             }
+            
+            # Safely get and store BatchNorm statistics
+            try:
+                if hasattr(model, 'get_bn_statistics'):
+                    bn_stats = model.get_bn_statistics()
+                    if bn_stats:  # Only store if there are actual stats
+                        state_dict['bn_stats'] = bn_stats
+            except Exception as e:
+                self.logger.warning(f"Failed to save BatchNorm statistics: {e}")
             
             # Save metadata and state separately
             torch.save(checkpoint_meta, meta_path)  # Metadata doesn't need weights_only
@@ -1043,13 +1058,17 @@ class CheckpointManager:
             state_dict = torch.load(checkpoint_info['state_file'], weights_only=True)
             
             # Restore BatchNorm statistics if they exist
-            if 'bn_stats' in state_dict and hasattr(model, 'bn_layers'):
-                for name, layer in model.bn_layers.items():
-                    if name in state_dict['bn_stats']:
-                        stats = state_dict['bn_stats'][name]
-                        layer.running_mean.copy_(stats['running_mean'])
-                        layer.running_var.copy_(stats['running_var'])
-                        layer.num_batches_tracked.copy_(stats['num_batches_tracked'])
+            if state_dict.get('bn_stats') and hasattr(model, 'bn_layers'):
+                try:
+                    for name, layer in model.bn_layers.items():
+                        if name in state_dict['bn_stats']:
+                            stats = state_dict['bn_stats'][name]
+                            layer.running_mean.copy_(stats['running_mean'].to(layer.running_mean.device))
+                            layer.running_var.copy_(stats['running_var'].to(layer.running_var.device))
+                            layer.num_batches_tracked.copy_(stats['num_batches_tracked'].to(layer.num_batches_tracked.device))
+                except Exception as e:
+                    self.logger.warning(f"Error restoring BatchNorm statistics: {e}")
+                    # Continue loading even if BN stats fail
             
             # Verify model state
             current_hash = self._compute_hash(model)
