@@ -1636,9 +1636,15 @@ class HyperparameterTuner:
             
             # Verify the model is valid by doing a test forward pass
             try:
+                model.eval()  # Set to evaluation mode
                 with torch.no_grad():
-                    sample_input = next(iter(val_loader))[0][:1]
-                    _ = model(sample_input)
+                    # Get a proper batch from the validation loader
+                    sample_batch, _ = next(iter(val_loader))
+                    if len(sample_batch) == 1:
+                        # If we only got one sample, repeat it to make a valid batch
+                        sample_batch = sample_batch.repeat(2, 1)
+                    _ = model(sample_batch)
+                model.train()  # Reset to training mode
             except Exception as e:
                 raise ValueError(f"Loaded model failed validation: {e}")
             
