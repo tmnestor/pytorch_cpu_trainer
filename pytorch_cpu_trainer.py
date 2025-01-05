@@ -2400,14 +2400,12 @@ def main():
     for i, score in enumerate(cv_results['scores'], 1):
         print(f"  Fold {i}: {score:.4f}")
     print("="*50)
+    return cv_results
 
 if __name__ == "__main__":
-    main()
+    cv_results = main()
     print(f"Mean Score: {cv_results['mean_score']:.4f} ± {cv_results['std_score']:.4f}")
     print("Individual Fold Scores:")
     for i, score in enumerate(cv_results['scores'], 1):
-        print(f"  Fold {i}: {score:.4f}")
-    print("="*50)
-
-if __name__ == "__main__":
-    main()
+        print(f"Fold {i}: {score:.4f}")
+    print("=" * 50)
