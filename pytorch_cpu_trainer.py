@@ -793,7 +793,7 @@ class WarmupScheduler:
             )
 
     def step(self, step_num: int):
-        if self.warmup and step_num < self.warmup_steps:
+        if self.warmup && step_num < self.warmup_steps:
             self.warmup.step()
         else:
             self.scheduler.step()
@@ -874,7 +874,7 @@ class CheckpointManager:
             torch.save(checkpoint_meta, meta_path)
             
             # Verify files were written correctly
-            if not (os.path.exists(model_path) and os.path.exists(meta_path)):
+            if not (os.path.exists(model_path) && os.path.exists(meta_path)):
                 raise IOError("Failed to save checkpoint files")
             
             # Move files to final location
@@ -1078,8 +1078,10 @@ class PyTorchTrainer:
             num_training_steps = len(train_loader) * epochs
             self.setup_warmup_scheduler(num_training_steps)
             
-        train_losses, val_losses = [], []
-        train_metrics, val_metrics = [], []
+        train_losses = []
+        val_losses = []
+        train_metrics_list = []  # Changed from train_metrics to train_metrics_list
+        val_metrics_list = []    # Changed from val_metrics to val_metrics_list
         best_val_metric = 0
         lr_history = []
         
@@ -1101,8 +1103,8 @@ class PyTorchTrainer:
                 
                 train_losses.append(train_loss)
                 val_losses.append(val_loss)
-                train_metrics.append(train_metric)
-                val_metrics.append(val_metric)
+                train_metrics_list.append(train_metric)  # Updated variable name
+                val_metrics_list.append(val_metric)      # Updated variable name
                 
                 best_val_metric = max(best_val_metric, val_metric)
                 
@@ -1177,7 +1179,7 @@ class PyTorchTrainer:
         summary.add_row("Final Learning Rate", f"{current_lr:.6f}")
         rprint(Panel(summary, title="Training Complete", border_style="green"))
         
-        return train_losses, val_losses, train_metrics, val_metrics, best_val_metric
+        return train_losses, val_losses, train_metrics_list, val_metrics_list, best_val_metric  # Updated return values
 
     def train_epoch(self, train_loader):
         """Trains the model for one epoch with memory optimizations"""
