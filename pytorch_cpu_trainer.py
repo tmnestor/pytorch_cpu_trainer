@@ -739,7 +739,7 @@ class MLPClassifier(nn.Module):
     def __init__(self, input_size, hidden_layers, num_classes=3, dropout_rate=0.2, use_batch_norm=True):
         super(MLPClassifier, self).__init__()
         self.use_batch_norm = use_batch_norm
-        self.bn_layers = OrderedDict()  # Track BatchNorm layers
+        self.bn_layers = nn.ModuleDict()  # Change to ModuleDict for proper registration
         
         layers = []
         prev_size = input_size
@@ -748,12 +748,9 @@ class MLPClassifier(nn.Module):
             layers.append(nn.Linear(prev_size, hidden_size))
             if use_batch_norm:
                 bn = nn.BatchNorm1d(hidden_size)
-                # Explicitly register buffers for each BatchNorm layer
-                self.register_buffer(f'bn_{i}_running_mean', bn.running_mean)
-                self.register_buffer(f'bn_{i}_running_var', bn.running_var)
-                self.register_buffer(f'bn_{i}_num_batches_tracked', bn.num_batches_tracked)
-                layers.append(bn)
+                # Register BatchNorm layer properly using ModuleDict
                 self.bn_layers[f'bn_{i}'] = bn
+                layers.append(bn)
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(dropout_rate))
             prev_size = hidden_size
@@ -770,11 +767,12 @@ class MLPClassifier(nn.Module):
         stats = {}
         if self.use_batch_norm:
             for name, layer in self.bn_layers.items():
-                # Access the registered buffers directly
                 stats[name] = {
-                    'running_mean': getattr(self, f'{name}_running_mean').cpu().clone().detach(),
-                    'running_var': getattr(self, f'{name}_running_var').cpu().clone().detach(),
-                    'num_batches_tracked': getattr(self, f'{name}_num_batches_tracked').cpu().clone().detach()
+                    'running_mean': layer.running_mean.cpu().clone().detach(),
+                    'running_var': layer.running_var.cpu().clone().detach(),
+                    'num_batches_tracked': layer.num_batches_tracked.cpu().clone().detach(),
+                    'weight': layer.weight.cpu().clone().detach() if layer.affine else None,
+                    'bias': layer.bias.cpu().clone().detach() if layer.affine else None
                 }
         return stats
     
@@ -945,6 +943,14 @@ class CheckpointManager:
             hasher.update(state_dict[key].cpu().numpy().tobytes())
         return hasher.hexdigest()
     
+    def _get_bn_buffers(self, model):
+        """Extract all BatchNorm registered buffers"""
+        bn_buffers = {}
+        for name, buffer in model.named_buffers():
+            if any(x in name for x in ['running_mean', 'running_var', 'num_batches_tracked']):
+                bn_buffers[name] = buffer.cpu().clone().detach()
+        return bn_buffers
+
     def save_checkpoint(self, model, optimizer, epoch, metric_value, params):
         """Save checkpoint with separate handling for weights and state"""
         version = self.metadata['version'] + 1
@@ -954,40 +960,27 @@ class CheckpointManager:
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Save model weights using safetensors
             model_path = os.path.join(tmp_dir, f"{base_name}.safetensors")
+            
+            # Explicitly collect BatchNorm buffers
+            bn_buffers = self._get_bn_buffers(model)
+            
+            # Save weights and include registered buffers
+            state_dict = model.state_dict()
             save_model(model, model_path)
             
-            # Compute model state hash
-            model_hash = self._compute_hash(model)
-            
-            # Save state info separately (not using weights_only)
-            meta_path = os.path.join(tmp_dir, f"{base_name}_meta.pt")
-            state_path = os.path.join(tmp_dir, f"{base_name}_state.pt")
-            
-            # Split state information
-            checkpoint_meta = {
-                'epoch': epoch,
-                'metric_value': metric_value,
-                'hyperparameters': params,
-                'model_hash': model_hash,
-                'version': version,
-                'timestamp': timestamp,
-                '__safe_format__': True
-            }
-            
+            # Save state info separately
             state_dict = {
                 'optimizer_state_dict': optimizer.state_dict(),
-                'bn_stats': None
+                'bn_buffers': bn_buffers,  # Store buffers separately
+                'bn_stats': model.get_bn_statistics() if hasattr(model, 'get_bn_statistics') else None
             }
             
-            # Safely get and store BatchNorm statistics
-            try:
-                if hasattr(model, 'get_bn_statistics'):
-                    bn_stats = model.get_bn_statistics()
-                    if bn_stats:  # Only store if there are actual stats
-                        state_dict['bn_stats'] = bn_stats
-            except Exception as e:
-                self.logger.warning(f"Failed to save BatchNorm statistics: {e}")
-            
+            # Log buffer information
+            if bn_buffers:
+                self.logger.debug(f"Saved {len(bn_buffers)} BatchNorm buffers")
+                for name in bn_buffers.keys():
+                    self.logger.debug(f"  Saved buffer: {name}")
+                    
             # Save metadata and state separately
             torch.save(checkpoint_meta, meta_path)  # Metadata doesn't need weights_only
             torch.save(state_dict, state_path)  # State info doesn't need weights_only
@@ -1057,24 +1050,36 @@ class CheckpointManager:
             # Load state information
             state_dict = torch.load(checkpoint_info['state_file'], weights_only=True)
             
-            # Restore BatchNorm statistics if they exist
+            # Restore BatchNorm buffers
+            if 'bn_buffers' in state_dict:
+                buffer_device = next(model.parameters()).device
+                for name, buffer in state_dict['bn_buffers'].items():
+                    if hasattr(model, name):
+                        buffer = buffer.to(buffer_device)
+                        model.register_buffer(name, buffer)
+                        self.logger.debug(f"Restored buffer: {name}")
+            
+            # Also restore traditional BatchNorm statistics if available
             if state_dict.get('bn_stats') and hasattr(model, 'bn_layers'):
                 try:
                     for name, layer in model.bn_layers.items():
                         if name in state_dict['bn_stats']:
                             stats = state_dict['bn_stats'][name]
+                            # These will now be backups in case buffer restoration failed
                             layer.running_mean.copy_(stats['running_mean'].to(layer.running_mean.device))
                             layer.running_var.copy_(stats['running_var'].to(layer.running_var.device))
                             layer.num_batches_tracked.copy_(stats['num_batches_tracked'].to(layer.num_batches_tracked.device))
+                            if layer.affine and stats['weight'] is not None:
+                                layer.weight.copy_(stats['weight'].to(layer.weight.device))
+                                layer.bias.copy_(stats['bias'].to(layer.bias.device))
                 except Exception as e:
                     self.logger.warning(f"Error restoring BatchNorm statistics: {e}")
-                    # Continue loading even if BN stats fail
             
-            # Verify model state
+            # Verify model state with registered buffers
             current_hash = self._compute_hash(model)
             if current_hash != checkpoint_info['model_hash']:
                 raise ValueError("Model state verification failed")
-                
+            
             return checkpoint_meta, model, state_dict
             
         except Exception as e:
@@ -1102,6 +1107,24 @@ class CheckpointManager:
                     self.logger.error(f"Error removing checkpoint: {e}")
             
             self._save_metadata()
+
+    def _compute_hash(self, model):
+        """Compute model state hash including registered buffers"""
+        state_dict = model.state_dict()
+        hasher = hashlib.sha256()
+        
+        # Include buffers in hash computation
+        for key in sorted(state_dict.keys()):
+            tensor = state_dict[key]
+            if isinstance(tensor, torch.Tensor):
+                hasher.update(tensor.cpu().numpy().tobytes())
+        
+        # Also hash registered buffers separately
+        bn_buffers = self._get_bn_buffers(model)
+        for key in sorted(bn_buffers.keys()):
+            hasher.update(bn_buffers[key].cpu().numpy().tobytes())
+            
+        return hasher.hexdigest()
 
 class TrainingHistory:
     """Maintains training history and handles checkpointing"""
