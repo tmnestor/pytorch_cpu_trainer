@@ -59,7 +59,7 @@ pip install -r requirements.txt
 3. Run the trainer:
 
 ```bash
-python MLP_trainer.py
+python pytorch_cpu_trainer.py
 ```
 
 ## Configuration
