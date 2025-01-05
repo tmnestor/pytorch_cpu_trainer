@@ -1508,9 +1508,10 @@ class HyperparameterTuner:
                 n_trials=self.config['optimization']['n_trials']
             )
             
-            # Verify best model was saved
-            if not os.path.exists(self.config['model']['save_path']):
-                raise FileNotFoundError("Best model file not found after tuning")
+            # Check if any checkpoints were created
+            checkpoint_files = list(CHECKPOINT_DIR.glob('checkpoint_v*'))
+            if not checkpoint_files:
+                raise FileNotFoundError("No checkpoint files found after tuning")
             
             # Load best model to verify it's valid
             result = self.checkpoint_manager.load_checkpoint()
