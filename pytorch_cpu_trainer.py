@@ -88,31 +88,29 @@ try:
 except ImportError:
     SAFE_LOADER_AVAILABLE = False
 
+# Replace setup_safe_loader with:
 def setup_safe_loader():
     """Setup safe loading mechanism for PyTorch"""
     if not SAFE_LOADER_AVAILABLE:
         return
-
-    # Add trusted classes and functions to the safelist
-    safe_globals = {
-        'OrderedDict': OrderedDict,
-        'dict': dict,
-        'list': list,
-        'tuple': tuple,
-        'int': int,
-        'float': float,
-        'str': str,
-        'bool': bool,
-        'torch': torch,
-        'torch.nn': torch.nn,
-        'torch.optim': torch.optim,
-    }
-    
-    for name, obj in safe_globals.items():
-        try:
-            add_safe_globals(name, obj)
-        except Exception as e:
-            warnings.warn(f"Failed to add {name} to safe globals: {e}")
+        
+    # For newer PyTorch versions, add_safe_globals expects a dictionary directly
+    try:
+        add_safe_globals({
+            'collections': {'OrderedDict': OrderedDict},
+            'builtins': {
+                'dict': dict,
+                'list': list,
+                'tuple': tuple,
+                'int': int,
+                'float': float,
+                'str': str,
+                'bool': bool,
+            },
+            'torch': {'nn': torch.nn, 'optim': torch.optim}
+        })
+    except Exception as e:
+        warnings.warn(f"Failed to setup safe globals: {e}")
 
 def safe_load_checkpoint(filepath: str) -> Dict[str, Any]:
     """Safely load checkpoint with weights_only=True if available"""
@@ -896,6 +894,7 @@ class WarmupScheduler:
         else:
             self.scheduler.step()
 
+# Update CheckpointManager's save_checkpoint and load_checkpoint methods:
 class CheckpointManager:
     """Handles atomic checkpoint operations and versioning"""
     def __init__(self, config, logger=None):
@@ -941,48 +940,56 @@ class CheckpointManager:
         return hasher.hexdigest()
     
     def save_checkpoint(self, model, optimizer, epoch, metric_value, params):
-        """Save checkpoint atomically with verification"""
-        # Create checkpoint version and filename
+        """Save checkpoint with separate handling for weights and state"""
         version = self.metadata['version'] + 1
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         base_name = f"checkpoint_v{version}_{timestamp}"
         
-        # Create temporary directory for atomic save
         with tempfile.TemporaryDirectory() as tmp_dir:
-            model_path = os.path.join(tmp_dir, f"{base_name}.safetensors")
-            meta_path = os.path.join(tmp_dir, f"{base_name}.pt")
-            
             # Save model weights using safetensors
+            model_path = os.path.join(tmp_dir, f"{base_name}.safetensors")
             save_model(model, model_path)
             
             # Compute model state hash
             model_hash = self._compute_hash(model)
             
-            # Save metadata and additional info
+            # Save state info separately (not using weights_only)
+            meta_path = os.path.join(tmp_dir, f"{base_name}_meta.pt")
+            state_path = os.path.join(tmp_dir, f"{base_name}_state.pt")
+            
+            # Split state information
             checkpoint_meta = {
                 'epoch': epoch,
-                'optimizer_state_dict': optimizer.state_dict(),
                 'metric_value': metric_value,
                 'hyperparameters': params,
                 'model_hash': model_hash,
                 'version': version,
                 'timestamp': timestamp,
-                '__safe_format__': True  # Mark as safe format
+                '__safe_format__': True
             }
             
-            # Save metadata atomically
-            torch.save(checkpoint_meta, meta_path, weights_only=True)
+            state_dict = {
+                'optimizer_state_dict': optimizer.state_dict(),
+                'bn_stats': model.get_bn_statistics() if hasattr(model, 'get_bn_statistics') else None
+            }
             
-            # Verify files were written correctly
-            if not (os.path.exists(model_path) and os.path.exists(meta_path)):
+            # Save metadata and state separately
+            torch.save(checkpoint_meta, meta_path)  # Metadata doesn't need weights_only
+            torch.save(state_dict, state_path)  # State info doesn't need weights_only
+            
+            # Verify files exist
+            if not all(os.path.exists(p) for p in [model_path, meta_path, state_path]):
                 raise IOError("Failed to save checkpoint files")
             
-            # Move files to final location
+            # Move to final location
             final_model_path = os.path.join(self.checkpoint_dir, f"{base_name}.safetensors")
-            final_meta_path = os.path.join(self.checkpoint_dir, f"{base_name}.pt")
+            final_meta_path = os.path.join(self.checkpoint_dir, f"{base_name}_meta.pt")
+            final_state_path = os.path.join(self.checkpoint_dir, f"{base_name}_state.pt")
             
-            shutil.move(model_path, final_model_path)
-            shutil.move(meta_path, final_meta_path)
+            for src, dst in [(model_path, final_model_path), 
+                           (meta_path, final_meta_path),
+                           (state_path, final_state_path)]:
+                shutil.move(src, dst)
             
             # Update metadata
             checkpoint_info = {
@@ -990,6 +997,7 @@ class CheckpointManager:
                 'timestamp': timestamp,
                 'model_file': final_model_path,
                 'meta_file': final_meta_path,
+                'state_file': final_state_path,
                 'metric_value': metric_value,
                 'model_hash': model_hash
             }
@@ -997,34 +1005,29 @@ class CheckpointManager:
             self.metadata['checkpoints'].append(checkpoint_info)
             self.metadata['version'] = version
             self._save_metadata()
-            
-            # Rotate old checkpoints
             self._rotate_checkpoints()
             
             self.logger.info(f"Saved checkpoint version {version} with metric value {metric_value:.4f}")
-            
             return checkpoint_info
-    
+
     def load_checkpoint(self, version=None):
-        """Load and verify checkpoint with improved safety"""
+        """Load checkpoint with separate handling for weights and state"""
         if not self.metadata['checkpoints']:
             return None
-        
-        # Get checkpoint info
-        if version is None:
-            checkpoint_info = max(self.metadata['checkpoints'], 
-                                key=lambda x: (x['metric_value'], x['version']))
-        else:
-            checkpoint_info = next((cp for cp in self.metadata['checkpoints'] 
-                                  if cp['version'] == version), None)
-            if not checkpoint_info:
-                raise ValueError(f"Checkpoint version {version} not found")
-        
-        try:
-            # Load metadata with safe loading mechanism
-            checkpoint_meta = safe_load_checkpoint(checkpoint_info['meta_file'])
             
-            # Create model and load weights
+        checkpoint_info = max(self.metadata['checkpoints'], 
+                            key=lambda x: (x['metric_value'], x['version'])) if version is None else \
+                         next((cp for cp in self.metadata['checkpoints'] 
+                              if cp['version'] == version), None)
+        
+        if not checkpoint_info:
+            raise ValueError(f"Checkpoint version {version} not found")
+            
+        try:
+            # Load metadata (no weights involved)
+            checkpoint_meta = torch.load(checkpoint_info['meta_file'])
+            
+            # Create model
             model = MLPClassifier(
                 input_size=self.config['model']['input_size'],
                 hidden_layers=checkpoint_meta['hyperparameters']['hidden_layers'],
@@ -1036,25 +1039,20 @@ class CheckpointManager:
             # Load weights using safetensors
             load_model(model, checkpoint_info['model_file'])
             
+            # Load state information
+            state_dict = torch.load(checkpoint_info['state_file'])
+            
             # Verify model state
             current_hash = self._compute_hash(model)
             if current_hash != checkpoint_info['model_hash']:
                 raise ValueError("Model state verification failed")
-            
-            self.logger.info(f"Successfully loaded checkpoint version {checkpoint_info['version']}")
-            
-            # Check if checkpoint uses safe format
-            if not checkpoint_meta.get('__safe_format__', False):
-                self.logger.warning(
-                    "Loaded legacy checkpoint format. Please resave using the new safe format."
-                )
-            
-            return checkpoint_meta, model
+                
+            return checkpoint_meta, model, state_dict
             
         except Exception as e:
             self.logger.error(f"Error loading checkpoint: {e}")
             return None
-    
+
     def _rotate_checkpoints(self):
         """Remove old checkpoints keeping only max_checkpoints"""
         if len(self.metadata['checkpoints']) > self.max_checkpoints:
@@ -1070,6 +1068,7 @@ class CheckpointManager:
                 try:
                     os.remove(checkpoint['model_file'])
                     os.remove(checkpoint['meta_file'])
+                    os.remove(checkpoint['state_file'])
                     self.metadata['checkpoints'].remove(checkpoint)
                 except Exception as e:
                     self.logger.error(f"Error removing checkpoint: {e}")
@@ -1628,10 +1627,20 @@ class HyperparameterTuner:
             if not checkpoint_files:
                 raise FileNotFoundError("No checkpoint files found after tuning")
             
-            # Load best model to verify it's valid
+            # Load and verify best model checkpoint
             result = self.checkpoint_manager.load_checkpoint()
             if result is None:
                 raise ValueError("Failed to load best model after tuning")
+            
+            checkpoint_meta, model, state_dict = result
+            
+            # Verify the model is valid by doing a test forward pass
+            try:
+                with torch.no_grad():
+                    sample_input = next(iter(val_loader))[0][:1]
+                    _ = model(sample_input)
+            except Exception as e:
+                raise ValueError(f"Loaded model failed validation: {e}")
             
             self.logger.info("\n" + "="*50)
             self.logger.info("Tuning Completed Successfully!")
@@ -1659,7 +1668,7 @@ def restore_best_model(config):
         if result is None:
             return None
             
-        checkpoint_meta, model = result
+        checkpoint_meta, model, state_dict = result
         
         # Create optimizer
         optimizer_type = checkpoint_meta['hyperparameters']['optimizer_type']
@@ -1679,7 +1688,7 @@ def restore_best_model(config):
                 weight_decay=checkpoint_meta['hyperparameters'].get('weight_decay', 0.0)
             )
         
-        optimizer.load_state_dict(checkpoint_meta['optimizer_state_dict'])
+        optimizer.load_state_dict(state_dict['optimizer_state_dict'])
         
         return {
             'model': model,
@@ -1898,7 +1907,7 @@ class ModelValidator:
     
     def cross_validate(self, model_class, train_dataset, n_splits=5, **model_params):
         """Perform k-fold cross-validation"""
-        kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+        kf = KFold(n_splits=5, shuffle=True, random_state=42)
         scores = []
         
         for fold, (train_idx, val_idx) in enumerate(kf.split(range(len(train_dataset)))):
@@ -2377,8 +2386,17 @@ def main():
         n_splits=config['training']['validation']['cross_validation']['n_splits'],
         **cv_model_params
     )
+    print("\nCross-Validation Results:")
     
     print("\nCross-Validation Results:")
+    print(f"Mean Score: {cv_results['mean_score']:.4f} ± {cv_results['std_score']:.4f}")
+    print("Individual Fold Scores:")
+    for i, score in enumerate(cv_results['scores'], 1):
+        print(f"  Fold {i}: {score:.4f}")
+    print("="*50)
+
+if __name__ == "__main__":
+    main()
     print(f"Mean Score: {cv_results['mean_score']:.4f} ± {cv_results['std_score']:.4f}")
     print("Individual Fold Scores:")
     for i, score in enumerate(cv_results['scores'], 1):
