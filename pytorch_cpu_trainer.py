@@ -583,39 +583,68 @@ class BatchNormManager:
                 layer.num_batches_tracked.item()
             )
     
-    def validate_state(self, threshold=0.1):
-        """Enhanced validation with remediation"""
+    def validate_state(self, threshold=0.1, early_warning=False):
+        """Enhanced validation with early warning detection"""
         issues = []
+        dead_neurons = []
+        unstable_vars = []
+        
         for name, layer in self.bn_layers.items():
             # Check for dead neurons (constant mean/var)
             if len(self.stats_history[name]['running_mean']) > 1:
                 mean_diff = np.abs(np.diff(self.stats_history[name]['running_mean'][-2:], axis=0))
                 var_diff = np.abs(np.diff(self.stats_history[name]['running_var'][-2:], axis=0))
                 
-                dead_neurons = np.where(mean_diff < 1e-6)[0]
-                unstable_vars = np.where(var_diff > threshold)[0]
+                # Early warning checks for trending issues
+                if early_warning and len(self.stats_history[name]['running_mean']) > 5:
+                    mean_trend = np.abs(np.diff(self.stats_history[name]['running_mean'][-5:], axis=0))
+                    var_trend = np.abs(np.diff(self.stats_history[name]['running_var'][-5:], axis=0))
+                    
+                    if np.any(mean_trend.mean(axis=0) < 1e-7):
+                        issues.append(f"Layer {name}: Potential dead neurons detected (low mean activity)")
+                    if np.any(var_trend.mean(axis=0) > threshold * 2):
+                        issues.append(f"Layer {name}: Potential unstable variances detected")
                 
-                if len(dead_neurons) > 0:
-                    issues.append(f"Layer {name}: {len(dead_neurons)} dead neurons detected")
-                if len(unstable_vars) > 0:
-                    issues.append(f"Layer {name}: {len(unstable_vars)} neurons with unstable variance")
+                current_dead = np.where(mean_diff < 1e-6)[0]
+                current_unstable = np.where(var_diff > threshold)[0]
+                
+                if len(current_dead) > 0:
+                    dead_neurons.extend(current_dead)
+                    issues.append(f"Layer {name}: {len(current_dead)} dead neurons detected")
+                if len(current_unstable) > 0:
+                    unstable_vars.extend(current_unstable)
+                    issues.append(f"Layer {name}: {len(current_unstable)} neurons with unstable variance")
+                
+                # Check for saturated activations
+                if np.any(np.abs(layer.running_mean.cpu().numpy()) > 3):
+                    issues.append(f"Layer {name}: Saturated activations detected")
         
         if issues:
             self.logger.warning("BatchNorm issues detected, applying fixes...")
             self._apply_fixes(dead_neurons, unstable_vars)
             
+        return issues
+    
     def _apply_fixes(self, dead_neurons, unstable_vars):
-        """Apply fixes for BatchNorm issues"""
+        """Enhanced fixes for BatchNorm issues"""
         for name, layer in self.bn_layers.items():
             if len(dead_neurons) > 0:
-                # Reinitialize dead neurons
-                layer.running_mean[dead_neurons] = 0
-                layer.running_var[dead_neurons] = 1
+                # Reinitialize dead neurons with small random values
+                layer.running_mean[dead_neurons] = torch.randn(len(dead_neurons)) * 0.1
+                layer.running_var[dead_neurons] = torch.ones(len(dead_neurons))
                 
             if len(unstable_vars) > 0:
-                # Stabilize unstable variances
-                layer.momentum = max(layer.momentum * 0.9, 0.01)  # Reduce momentum
-                layer.eps = max(layer.eps * 1.1, 1e-4)  # Increase numerical stability
+                # Stabilize unstable variances with exponential moving average
+                layer.momentum = max(layer.momentum * 0.8, 0.01)  # More aggressive momentum reduction
+                layer.eps = max(layer.eps * 1.2, 1e-4)  # More aggressive numerical stability
+                
+                # Add variance smoothing
+                current_vars = layer.running_var[unstable_vars].cpu().numpy()
+                smoothed_vars = np.maximum(
+                    np.exp(np.log(current_vars).mean()),  # Geometric mean
+                    np.ones_like(current_vars) * 0.1  # Minimum variance
+                )
+                layer.running_var[unstable_vars] = torch.tensor(smoothed_vars, device=layer.running_var.device)
     
     def get_statistics_summary(self):
         """Generate summary of BatchNorm statistics"""
@@ -1451,6 +1480,8 @@ class HyperparameterTuner:
         best_metric = float('-inf')
         patience_counter = 0
         last_metric = float('-inf')
+        bn_issues_counter = 0
+        max_bn_issues = 3  # Maximum allowed consecutive BatchNorm issues
         
         self.logger.info(f"\nStarting trial {trial.number}")
         self.logger.info(f"Parameters: {trial_params}")
@@ -1458,6 +1489,18 @@ class HyperparameterTuner:
         for epoch in range(self.config['training']['epochs']):
             trainer.train_epoch(train_loader)
             _, metrics = trainer.evaluate(val_loader)
+            
+            # Check BatchNorm stability if model uses it
+            if hasattr(model, 'bn_manager'):
+                bn_issues = model.bn_manager.validate_state(early_warning=True)
+                if bn_issues:
+                    bn_issues_counter += 1
+                    self.logger.warning(f"Trial {trial.number}, Epoch {epoch}: BatchNorm issues detected")
+                    if bn_issues_counter >= max_bn_issues:
+                        self.logger.warning(f"Trial {trial.number} pruned due to persistent BatchNorm issues")
+                        raise optuna.TrialPruned("Persistent BatchNorm instability")
+                else:
+                    bn_issues_counter = 0
             
             metric = metrics[self.config['training']['optimization_metric']]
             trial.report(metric, epoch)
