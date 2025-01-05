@@ -2272,7 +2272,6 @@ def main():
     cv_results = validator.cross_validate(
         model_class=MLPClassifier,
         train_dataset=full_dataset,
-    print("Individual Fold Scores:")
         n_splits=config['training']['validation']['cross_validation']['n_splits'],
         **cv_model_params
     )
@@ -2280,12 +2279,6 @@ def main():
     print("\nCross-Validation Results:")
     print(f"Mean Score: {cv_results['mean_score']:.4f} ± {cv_results['std_score']:.4f}")
     print("Individual Fold Scores:")
-    for i, score in enumerate(cv_results['scores'], 1):
-        print(f"  Fold {i}: {score:.4f}")
-    print("="*50)
-
-if __name__ == "__main__":
-    main()
     for i, score in enumerate(cv_results['scores'], 1):
         print(f"  Fold {i}: {score:.4f}")
     print("="*50)
