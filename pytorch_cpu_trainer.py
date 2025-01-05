@@ -126,7 +126,7 @@ def safe_load_checkpoint(filepath: str) -> Dict[str, Any]:
                 "for improved security.",
                 UserWarning
             )
-            return torch.load(filepath, map_location='cpu')
+            return torch.load(filepath, map_location='cpu', weights_only=True)
         raise e
 
 class SafeProfiler:
@@ -1025,7 +1025,7 @@ class CheckpointManager:
             
         try:
             # Load metadata (no weights involved)
-            checkpoint_meta = torch.load(checkpoint_info['meta_file'])
+            checkpoint_meta = torch.load(checkpoint_info['meta_file'], weights_only=True)
             
             # Create model
             model = MLPClassifier(
@@ -1040,7 +1040,7 @@ class CheckpointManager:
             load_model(model, checkpoint_info['model_file'])
             
             # Load state information
-            state_dict = torch.load(checkpoint_info['state_file'])
+            state_dict = torch.load(checkpoint_info['state_file'], weights_only=True)
             
             # Verify model state
             current_hash = self._compute_hash(model)
