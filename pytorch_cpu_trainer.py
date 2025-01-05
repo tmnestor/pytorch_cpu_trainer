@@ -793,7 +793,7 @@ class WarmupScheduler:
             )
 
     def step(self, step_num: int):
-        if self.warmup && step_num < self.warmup_steps:
+        if self.warmup and step_num < self.warmup_steps:
             self.warmup.step()
         else:
             self.scheduler.step()
@@ -874,7 +874,7 @@ class CheckpointManager:
             torch.save(checkpoint_meta, meta_path)
             
             # Verify files were written correctly
-            if not (os.path.exists(model_path) && os.path.exists(meta_path)):
+            if not (os.path.exists(model_path) and os.path.exists(meta_path)):
                 raise IOError("Failed to save checkpoint files")
             
             # Move files to final location
