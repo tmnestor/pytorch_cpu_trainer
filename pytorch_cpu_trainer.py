@@ -81,11 +81,18 @@ import pathlib
 CHECKPOINT_DIR = pathlib.Path("checkpoints")
 CHECKPOINT_DIR.mkdir(exist_ok=True)
 
-# Add after imports
-from torch.serialization import add_safe_globals, UNSAFE_MESSAGE
+# Replace the torch.serialization import line with:
+try:
+    from torch.serialization import add_safe_globals
+    SAFE_LOADER_AVAILABLE = True
+except ImportError:
+    SAFE_LOADER_AVAILABLE = False
 
 def setup_safe_loader():
     """Setup safe loading mechanism for PyTorch"""
+    if not SAFE_LOADER_AVAILABLE:
+        return
+
     # Add trusted classes and functions to the safelist
     safe_globals = {
         'OrderedDict': OrderedDict,
@@ -102,20 +109,24 @@ def setup_safe_loader():
     }
     
     for name, obj in safe_globals.items():
-        add_safe_globals(name, obj)
+        try:
+            add_safe_globals(name, obj)
+        except Exception as e:
+            warnings.warn(f"Failed to add {name} to safe globals: {e}")
 
 def safe_load_checkpoint(filepath: str) -> Dict[str, Any]:
-    """Safely load checkpoint with weights_only=True"""
+    """Safely load checkpoint with weights_only=True if available"""
     try:
         # First try loading with weights_only=True
-        return torch.load(filepath, weights_only=True, map_location='cpu')
+        checkpoint = torch.load(filepath, map_location='cpu', weights_only=True)
+        return checkpoint
     except (RuntimeError, TypeError) as e:
-        if "weights_only=True" in str(e):
-            # Handle legacy checkpoints
+        if "weights_only" in str(e):
+            # Handle older PyTorch versions
             warnings.warn(
-                "Loading legacy checkpoint format. Please resave your checkpoints "
-                "using the new safe format.",
-                DeprecationWarning
+                "Loading checkpoint with legacy format. Consider updating PyTorch "
+                "for improved security.",
+                UserWarning
             )
             return torch.load(filepath, map_location='cpu')
         raise e
