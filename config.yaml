@@ -115,10 +115,19 @@ training:
       - 0.9                        # Beta1
       - 0.999                      # Beta2
       eps: 1.0e-08                 # Epsilon for numerical stability
-      lr: 0.0001                   # Learning rate
+      lr: 0.0001                   # Reduce learning rate
     SGD:                           # SGD optimizer settings
       lr: 0.01                     # Learning rate
       momentum: 0.9                # Momentum factor
+
+  # Add BatchNorm specific settings
+  batch_norm:
+    initial_momentum: 0.1
+    min_momentum: 0.01
+    max_momentum: 0.1
+    eps: 1.0e-5
+    stabilize_interval: 100  # Steps between stability checks
+
   performance:                      # Performance optimization settings
     batch_size_multiplier: 2       # Multiplier for batch size
     enable_mkl: true              # Enable Intel MKL

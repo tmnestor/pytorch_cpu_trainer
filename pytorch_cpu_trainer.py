@@ -541,6 +541,8 @@ class BatchNormManager:
         self.bn_layers = {name: module for name, module in model.named_modules() 
                          if isinstance(module, nn.BatchNorm1d)}
         self.stats_history = {}
+        self.momentum_range = (0.01, 0.1)  # Add momentum range
+        self.variance_threshold = 0.01      # Add variance stability threshold
         self._setup_tracking()
     
     def _setup_tracking(self):
@@ -554,15 +556,16 @@ class BatchNormManager:
             }
     
     def update_momentum(self, epoch, total_epochs):
-        """Schedule BatchNorm momentum using cosine annealing"""
-        min_momentum = 0.01
-        max_momentum = 0.1
-        momentum = min_momentum + 0.5 * (max_momentum - min_momentum) * (
-            1 + np.cos(np.pi * epoch / total_epochs)
-        )
+        """Improved momentum scheduling with more gradual changes"""
+        min_momentum, max_momentum = self.momentum_range
+        # More gradual momentum change using sigmoid instead of cosine
+        progress = epoch / total_epochs
+        momentum = min_momentum + (max_momentum - min_momentum) * (1 / (1 + np.exp(-10 * (progress - 0.5))))
         
         for layer in self.bn_layers.values():
             layer.momentum = momentum
+            # Add eps to prevent division by zero
+            layer.eps = 1e-5  
             
         self.logger.debug(f"Updated BatchNorm momentum to {momentum:.4f}")
         
@@ -581,7 +584,7 @@ class BatchNormManager:
             )
     
     def validate_state(self, threshold=0.1):
-        """Validate BatchNorm states and detect anomalies"""
+        """Enhanced validation with remediation"""
         issues = []
         for name, layer in self.bn_layers.items():
             # Check for dead neurons (constant mean/var)
@@ -598,11 +601,21 @@ class BatchNormManager:
                     issues.append(f"Layer {name}: {len(unstable_vars)} neurons with unstable variance")
         
         if issues:
-            self.logger.warning("BatchNorm issues detected:")
-            for issue in issues:
-                self.logger.warning(f"  - {issue}")
-            return False
-        return True
+            self.logger.warning("BatchNorm issues detected, applying fixes...")
+            self._apply_fixes(dead_neurons, unstable_vars)
+            
+    def _apply_fixes(self, dead_neurons, unstable_vars):
+        """Apply fixes for BatchNorm issues"""
+        for name, layer in self.bn_layers.items():
+            if len(dead_neurons) > 0:
+                # Reinitialize dead neurons
+                layer.running_mean[dead_neurons] = 0
+                layer.running_var[dead_neurons] = 1
+                
+            if len(unstable_vars) > 0:
+                # Stabilize unstable variances
+                layer.momentum = max(layer.momentum * 0.9, 0.01)  # Reduce momentum
+                layer.eps = max(layer.eps * 1.1, 1e-4)  # Increase numerical stability
     
     def get_statistics_summary(self):
         """Generate summary of BatchNorm statistics"""
@@ -2259,6 +2272,7 @@ def main():
     cv_results = validator.cross_validate(
         model_class=MLPClassifier,
         train_dataset=full_dataset,
+    print("Individual Fold Scores:")
         n_splits=config['training']['validation']['cross_validation']['n_splits'],
         **cv_model_params
     )
@@ -2266,6 +2280,12 @@ def main():
     print("\nCross-Validation Results:")
     print(f"Mean Score: {cv_results['mean_score']:.4f} ± {cv_results['std_score']:.4f}")
     print("Individual Fold Scores:")
+    for i, score in enumerate(cv_results['scores'], 1):
+        print(f"  Fold {i}: {score:.4f}")
+    print("="*50)
+
+if __name__ == "__main__":
+    main()
     for i, score in enumerate(cv_results['scores'], 1):
         print(f"  Fold {i}: {score:.4f}")
     print("="*50)
