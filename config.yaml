@@ -197,5 +197,5 @@ training:
       - accuracy
       - f1_score
       - precision
-      - recall
-      - confusion_matrix
+      - recall          # Removed confusion_matrix from tracked metrics
+                       # since it can't be converted to a scalar value
