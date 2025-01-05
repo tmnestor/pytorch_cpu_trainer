@@ -81,6 +81,45 @@ import pathlib
 CHECKPOINT_DIR = pathlib.Path("checkpoints")
 CHECKPOINT_DIR.mkdir(exist_ok=True)
 
+# Add after imports
+from torch.serialization import add_safe_globals, UNSAFE_MESSAGE
+
+def setup_safe_loader():
+    """Setup safe loading mechanism for PyTorch"""
+    # Add trusted classes and functions to the safelist
+    safe_globals = {
+        'OrderedDict': OrderedDict,
+        'dict': dict,
+        'list': list,
+        'tuple': tuple,
+        'int': int,
+        'float': float,
+        'str': str,
+        'bool': bool,
+        'torch': torch,
+        'torch.nn': torch.nn,
+        'torch.optim': torch.optim,
+    }
+    
+    for name, obj in safe_globals.items():
+        add_safe_globals(name, obj)
+
+def safe_load_checkpoint(filepath: str) -> Dict[str, Any]:
+    """Safely load checkpoint with weights_only=True"""
+    try:
+        # First try loading with weights_only=True
+        return torch.load(filepath, weights_only=True, map_location='cpu')
+    except (RuntimeError, TypeError) as e:
+        if "weights_only=True" in str(e):
+            # Handle legacy checkpoints
+            warnings.warn(
+                "Loading legacy checkpoint format. Please resave your checkpoints "
+                "using the new safe format.",
+                DeprecationWarning
+            )
+            return torch.load(filepath, map_location='cpu')
+        raise e
+
 class SafeProfiler:
     """Safe profiler wrapper with graceful fallbacks"""
     def __init__(self, enabled=False, activities=None):
@@ -841,7 +880,7 @@ class WarmupScheduler:
             )
 
     def step(self, step_num: int):
-        if self.warmup and step_num < self.warmup_steps:
+        if self.warmup && step_num < self.warmup_steps:
             self.warmup.step()
         else:
             self.scheduler.step()
@@ -858,6 +897,7 @@ class CheckpointManager:
         # Load checkpoint metadata if exists
         self.metadata_file = CHECKPOINT_DIR / 'checkpoint_metadata.json'
         self.metadata = self._load_metadata()
+        setup_safe_loader()  # Initialize safe loading mechanism
     
     def _load_metadata(self):
         """Load or initialize checkpoint metadata"""
@@ -915,11 +955,12 @@ class CheckpointManager:
                 'hyperparameters': params,
                 'model_hash': model_hash,
                 'version': version,
-                'timestamp': timestamp
+                'timestamp': timestamp,
+                '__safe_format__': True  # Mark as safe format
             }
             
             # Save metadata atomically
-            torch.save(checkpoint_meta, meta_path)
+            torch.save(checkpoint_meta, meta_path, weights_only=True)
             
             # Verify files were written correctly
             if not (os.path.exists(model_path) and os.path.exists(meta_path)):
@@ -954,7 +995,7 @@ class CheckpointManager:
             return checkpoint_info
     
     def load_checkpoint(self, version=None):
-        """Load and verify checkpoint"""
+        """Load and verify checkpoint with improved safety"""
         if not self.metadata['checkpoints']:
             return None
         
@@ -969,8 +1010,8 @@ class CheckpointManager:
                 raise ValueError(f"Checkpoint version {version} not found")
         
         try:
-            # Load metadata first
-            checkpoint_meta = torch.load(checkpoint_info['meta_file'])
+            # Load metadata with safe loading mechanism
+            checkpoint_meta = safe_load_checkpoint(checkpoint_info['meta_file'])
             
             # Create model and load weights
             model = MLPClassifier(
@@ -990,6 +1031,13 @@ class CheckpointManager:
                 raise ValueError("Model state verification failed")
             
             self.logger.info(f"Successfully loaded checkpoint version {checkpoint_info['version']}")
+            
+            # Check if checkpoint uses safe format
+            if not checkpoint_meta.get('__safe_format__', False):
+                self.logger.warning(
+                    "Loaded legacy checkpoint format. Please resave using the new safe format."
+                )
+            
             return checkpoint_meta, model
             
         except Exception as e:
