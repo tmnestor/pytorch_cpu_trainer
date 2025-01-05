@@ -1042,6 +1042,15 @@ class CheckpointManager:
             # Load state information
             state_dict = torch.load(checkpoint_info['state_file'], weights_only=True)
             
+            # Restore BatchNorm statistics if they exist
+            if 'bn_stats' in state_dict and hasattr(model, 'bn_layers'):
+                for name, layer in model.bn_layers.items():
+                    if name in state_dict['bn_stats']:
+                        stats = state_dict['bn_stats'][name]
+                        layer.running_mean.copy_(stats['running_mean'])
+                        layer.running_var.copy_(stats['running_var'])
+                        layer.num_batches_tracked.copy_(stats['num_batches_tracked'])
+            
             # Verify model state
             current_hash = self._compute_hash(model)
             if current_hash != checkpoint_info['model_hash']:
