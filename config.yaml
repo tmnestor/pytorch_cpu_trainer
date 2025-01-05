@@ -38,7 +38,7 @@ logging:
 model:
   input_size: 4                         # Number of input features
   num_classes: 4                        # Number of output classes
-  save_path: checkpoints/best_model.pt  # Path to save best model
+  save_path: checkpoints/model.pt       # Changed from checkpoints/best_model.pt
 
 # Optimization configuration
 optimization:
@@ -77,7 +77,7 @@ training:
     enabled: true                     # Whether to save checkpoints
     frequency: 10                     # Epochs between checkpoints
     max_checkpoints: 5               # Maximum number of checkpoints to keep
-    save_dir: checkpoints            # Directory for saving checkpoints
+    save_dir: checkpoints            # Ensures consistency with CHECKPOINT_DIR
   cpu_optimization:                   # CPU-specific optimizations
     enable_mkldnn: true              # Enable Intel MKL-DNN
     num_threads: auto                # Number of CPU threads (auto=use all)

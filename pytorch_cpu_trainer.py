@@ -75,6 +75,12 @@ except ImportError:
 import torchmetrics
 import inspect
 
+import pathlib
+
+# Add after imports
+CHECKPOINT_DIR = pathlib.Path("checkpoints")
+CHECKPOINT_DIR.mkdir(exist_ok=True)
+
 class SafeProfiler:
     """Safe profiler wrapper with graceful fallbacks"""
     def __init__(self, enabled=False, activities=None):
@@ -803,12 +809,12 @@ class CheckpointManager:
     def __init__(self, config, logger=None):
         self.config = config
         self.logger = logger or logging.getLogger('CheckpointManager')
-        self.checkpoint_dir = os.path.dirname(config['model']['save_path'])
+        self.checkpoint_dir = CHECKPOINT_DIR  # Changed from config['model']['save_path']
         self.max_checkpoints = config.get('training', {}).get('checkpointing', {}).get('max_checkpoints', 5)
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         
         # Load checkpoint metadata if exists
-        self.metadata_file = os.path.join(self.checkpoint_dir, 'checkpoint_metadata.json')
+        self.metadata_file = CHECKPOINT_DIR / 'checkpoint_metadata.json'
         self.metadata = self._load_metadata()
     
     def _load_metadata(self):
@@ -2077,7 +2083,7 @@ def main():
     )
     
     # Ensure checkpoint directory exists
-    os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
+    CHECKPOINT_DIR.mkdir(exist_ok=True)  # Changed from config['model']['save_path']
     
     need_training = False
     # Try to restore model first
