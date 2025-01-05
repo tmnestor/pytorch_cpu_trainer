@@ -880,7 +880,7 @@ class WarmupScheduler:
             )
 
     def step(self, step_num: int):
-        if self.warmup && step_num < self.warmup_steps:
+        if self.warmup and step_num < self.warmup_steps:
             self.warmup.step()
         else:
             self.scheduler.step()
