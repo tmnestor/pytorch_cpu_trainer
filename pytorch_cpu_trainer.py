@@ -1,4 +1,3 @@
-
 # File: pytorch_cpu_trainer.py
 
 import random
@@ -794,7 +793,7 @@ class WarmupScheduler:
             )
 
     def step(self, step_num: int):
-        if self.warmup and step_num < self.warmup_steps:
+        if self.warmup && step_num < self.warmup_steps:
             self.warmup.step()
         else:
             self.scheduler.step()
@@ -875,7 +874,7 @@ class CheckpointManager:
             torch.save(checkpoint_meta, meta_path)
             
             # Verify files were written correctly
-            if not (os.path.exists(model_path) and os.path.exists(meta_path)):
+            if not (os.path.exists(model_path) && os.path.exists(meta_path)):
                 raise IOError("Failed to save checkpoint files")
             
             # Move files to final location
@@ -1115,7 +1114,8 @@ class PyTorchTrainer:
                 )
                 
                 if self.verbose and (epoch == 0 or (epoch + 1) % 10 == 0 or epoch == epochs - 1):
-                    metric_name = 'F1' if metric == 'f1' else 'Accuracy'
+                    # Update metric name display
+                    metric_name = 'F1-Score' if metric == 'f1_score' else 'Accuracy'
                     
                     # Create rich table for metrics
                     table = Table(show_header=True, header_style="bold magenta")
@@ -2180,7 +2180,7 @@ def main():
     print(f"\nRestored model performance:")
     print(f"Validation Loss: {val_loss:.4f}")
     print(f"Validation Accuracy: {val_metrics['accuracy']:.2f}%")
-    print(f"Validation F1-Score: {val_metrics['f1']:.4f}")
+    print(f"Validation F1-Score: {val_metrics['f1_score']:.4f}")  # Changed from 'f1' to 'f1_score'
     print(f"\nBest {metric_name.upper()} from tuning: {restored['metric_value']:.4f}")
     print(f"Current {metric_name.upper()}: {metric_value:.4f}")
     
@@ -2191,7 +2191,7 @@ def main():
     print(f"\nBasic Performance Metrics:")
     print(f"Validation Loss: {val_loss:.4f}")
     print(f"Validation Accuracy: {val_metrics['accuracy']:.2f}%")
-    print(f"Validation F1-Score: {val_metrics['f1']:.4f}")
+    print(f"Validation F1-Score: {val_metrics['f1_score']:.4f}")
     print(f"\nBest {metric_name.upper()} from tuning: {restored['metric_value']:.4f}")
     print(f"Current {metric_name.upper()}: {metric_value:.4f}")
     

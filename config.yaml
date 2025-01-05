@@ -59,7 +59,7 @@ optimization:
     min_delta: 0.001                  # Minimum change to consider as improvement
     patience: 10                       # Epochs to wait before early stopping
   n_trials: 50                        # Number of hyperparameter optimization trials
-  optimization_metric: f1              # Metric to optimize during training
+  optimization_metric: f1_score        # Metric to optimize during training
   regularization:                      # Regularization settings
     batch_norm_prob: 0.5              # Probability of using batch normalization
     weight_decay_range:               # Range for weight decay search
@@ -107,7 +107,7 @@ training:
       log_frequency: 100            # Frequency of memory logging
       profile_path: memory_profile.json  # Path for memory profile export
   num_workers: 4                     # Default number of worker processes
-  optimization_metric: f1            # Metric to optimize during training
+  optimization_metric: f1_score      # Metric to optimize during training
   optimizer_choice: Adam             # Choice of optimizer
   optimizer_params:                  # Optimizer-specific parameters
     Adam:                           # Adam optimizer settings
