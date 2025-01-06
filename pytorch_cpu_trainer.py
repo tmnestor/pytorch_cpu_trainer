@@ -96,7 +96,6 @@ class CustomDataset(Dataset):
     
     def __getitem__(self, idx):
         return self.features[idx], self.labels[idx]
-MLPClassifier
 class MLPClassifier(nn.Module):
     def __init__(self, input_size, hidden_layers, num_classes=3, dropout_rate=0.2, use_batch_norm=True, config=None):
         super(MLPClassifier, self).__init__()
