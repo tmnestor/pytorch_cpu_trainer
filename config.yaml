@@ -39,7 +39,7 @@ logging:
       filename: mlptrainer.log
       level: INFO
 model:
-  history_db: checkpoints/model_history.db
+  history_db: checkpoints/model_history.db  # Ensure this matches the directory structure
   input_size: 7
   num_classes: 5
   save_path: checkpoints/model.pt
