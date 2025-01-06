@@ -661,13 +661,17 @@ def main():
     # Create criterion for evaluation
     criterion = getattr(nn, config['training']['loss_function'])()
     
-    # Add scheduler
+    # Add scheduler with corrected parameters
+    max_lr = config['training']['optimizer_params']['Adam']['lr'] * config['training']['scheduler']['params'].get('max_lr_factor', 10.0)
+    scheduler_params = config['training']['scheduler']['params'].copy()
+    scheduler_params.pop('max_lr_factor', None)  # Remove max_lr_factor from params
+    
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
-        max_lr=config['training']['optimizer_params']['Adam']['lr'],
+        max_lr=max_lr,
         epochs=config['training']['epochs'],
         steps_per_epoch=len(train_loader),
-        **config['training']['scheduler']['params']
+        **scheduler_params
     )
     
     # Initialize CPU optimization with model and optimizer
