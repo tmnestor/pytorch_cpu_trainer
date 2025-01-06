@@ -368,44 +368,30 @@ class PyTorchTrainer:
                 metric_name = 'F1' if metric == 'f1' else 'Accuracy'
                 print(f'Epoch {epoch+1}/{epochs}: Train {metric_name}: {train_metric * 100:.2f}%, Val {metric_name}: {val_metric * 100:.2f}%')
             
-            del outputs, loss
+            # Memory cleanup
             gc.collect()  # Use only gc.collect() for CPU memory cleanup
         
         self.plot_learning_curves(train_losses, val_losses, train_metrics, val_metrics, 
                                 metric_name='F1-Score' if metric == 'f1' else 'Accuracy')
         
         return train_losses, val_losses, train_metrics, val_metrics, best_val_metric
-    
-    @staticmethod
-    def plot_learning_curves(train_losses, val_losses, train_metrics, val_metrics, metric_name='Accuracy'):
-        """Plots the learning curves for loss and chosen metric (accuracy or F1)."""
-        plt.figure(figsize=(10, 6))
-        sns.set_style("whitegrid")
-        
-        # Normalize values for better visualization
-        max_loss = max(max(train_losses), max(val_losses))
-        max_metric = max(max(train_metrics), max(val_metrics))
-        
-        epochs = range(1, len(train_losses) + 1)
-        
-        sns.lineplot(data={
-            f"Training {metric_name}": [x/max_metric for x in train_metrics],
-            f"Validation {metric_name}": [x/max_metric for x in val_metrics],
-            "Training Loss": [x/max_loss for x in train_losses],
-            "Validation Loss": [x/max_loss for x in val_losses]
-        })
-        
-        plt.xlabel("Epoch")
-        plt.ylabel("Normalized Value")
-        plt.title(f"Training and Validation Loss and {metric_name} Curves")
-        plt.legend()
-        plt.savefig('learning_curves.png')
-        plt.close()
 
 class HyperparameterTuner:
     def __init__(self, config):
         self.config = config
-        self.best_trial_value = float('-inf')
+        self.best_trial_value = float('-inf')2025-01-06 21:49:21,672 - pytorch_cpu_trainer.py - MLPTrainer - INFO - Starting model training...
+Training:   0%|                                                                                                                                                                                     | 0/100 [00:00<?, ?it/s]Epoch 1/100: Train Accuracy: 31.08%, Val Accuracy: 34.12%
+Training:   0%|                                                                                                                                                                                     | 0/100 [00:00<?, ?it/s]
+Traceback (most recent call last):
+  File "/home/jovyan/work/pytorch_cpu_trainer.py", line 1015, in <module>
+    main()
+  File "/home/jovyan/work/pytorch_cpu_trainer.py", line 998, in main
+    train_losses, val_losses, train_metrics, val_metrics, best_val_metric = trainer.train(
+                                                                            ^^^^^^^^^^^^^^
+  File "/home/jovyan/work/pytorch_cpu_trainer.py", line 371, in train
+    del outputs, loss
+        ^^^^^^^
+UnboundLocalError: cannot access local variable 'outputs' where it is not associated with a value
         self.best_model_state = None
         self.best_optimizer_state = None
         self.best_params = None
