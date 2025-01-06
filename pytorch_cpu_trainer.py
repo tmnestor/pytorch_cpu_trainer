@@ -22,8 +22,9 @@ import psutil
 import cpuinfo
 import intel_extension_for_pytorch as ipex
 import multiprocessing
-import torch.optim.swa_utils as swa_utils  # Add at top with other imports
-import argparse  # Add at top with other imports
+import torch.optim.swa_utils as swa_utils
+import argparse
+from model_history import ModelHistory, update_default_config
 
 
 def load_config(config_path):
@@ -609,17 +610,23 @@ def restore_best_model(config):
         logger = setup_logger(config, 'MLPTrainer')
         logger.warning(f"Failed to load checkpoint: {e}. Using default model.")
     
-    # Create default model if no checkpoint or loading failed
-    default_width = 128  # Use a single width for all layers
-    default_n_layers = 3  # Number of hidden layers
-    hidden_layers = [default_width] * default_n_layers  # Create list of same width
+    # Use default model configuration from historical best if available
+    if 'default_model' in config:
+        hidden_layers = config['default_model']['hidden_layers']
+        dropout_rate = config['default_model']['dropout_rate']
+        use_batch_norm = config['default_model']['use_batch_norm']
+    else:
+        # Fallback to hardcoded defaults
+        hidden_layers = [128] * 3
+        dropout_rate = 0.2
+        use_batch_norm = True
     
     model = MLPClassifier(
         input_size=config['model']['input_size'],
         hidden_layers=hidden_layers,
         num_classes=config['model']['num_classes'],
-        dropout_rate=0.2,
-        use_batch_norm=True,
+        dropout_rate=dropout_rate,
+        use_batch_norm=use_batch_norm,
         config=config
     )
     
@@ -903,6 +910,12 @@ def main():
     # Load configuration
     config = load_config(args.config)
     
+    # Update default configuration with historical best performers
+    update_default_config(args.config)
+    
+    # Reload config after update
+    config = load_config(args.config)
+    
     # Create necessary directories first
     os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
     os.makedirs(config['logging']['directory'], exist_ok=True)
@@ -1029,6 +1042,14 @@ def main():
         logger.info(f"Validation Loss: {val_loss:.4f}")
         logger.info(f"Validation Accuracy: {val_accuracy * 100:.2f}%")
         logger.info(f"Validation F1-Score: {val_f1 * 100:.2f}%")
+        
+        # After training completes, save experiment results
+        history = ModelHistory(args.config)  # Pass config path instead of using default
+        history.save_experiment(
+            args.config,
+            best_val_metric,
+            config['training']['optimization_metric']
+        )
 
 if __name__ == "__main__":
     main()
