@@ -467,8 +467,9 @@ def set_seed(seed):
 class CPUOptimizer:
     """Handles CPU-specific optimizations for PyTorch training."""
     
-    def __init__(self, config):
+    def __init__(self, config, model=None):
         self.config = config
+        self.model = model
         self.logger = logging.getLogger('CPUOptimizer')
         self.cpu_info = cpuinfo.get_cpu_info()
         
@@ -509,7 +510,7 @@ class CPUOptimizer:
         )
         
         # Set thread configurations
-        torch.set_num_threads(optimizations['num_threads'])
+        torch.set_num_threads(optimations['num_threads'])
         if hasattr(torch, 'set_num_interop_threads'):
             torch.set_num_interop_threads(min(4, optimizations['num_threads']))
         
@@ -518,7 +519,7 @@ class CPUOptimizer:
             torch.backends.mkldnn.enabled = True
         
         # Configure IPEX if available
-        if features['ipex']:
+        if features['ipex'] and self.model is not None:
             self.model = ipex.optimize(self.model)
             if optimizations['use_bfloat16']:
                 self.model = self.model.to(torch.bfloat16)
@@ -597,6 +598,12 @@ def main():
     restored = restore_best_model(config)
     model = restored['model']
     optimizer = restored['optimizer']
+    
+    # Initialize CPU optimization with model
+    cpu_optimizer = CPUOptimizer(config, model)
+    optimizations = cpu_optimizer.configure_optimizations()
+    # Get the optimized model back
+    model = cpu_optimizer.model
     
     # Create criterion for evaluation
     criterion = getattr(nn, config['training']['loss_function'])()
