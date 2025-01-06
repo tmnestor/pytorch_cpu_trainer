@@ -97,7 +97,7 @@ class CustomDataset(Dataset):
         return self.features[idx], self.labels[idx]
 
 class MLPClassifier(nn.Module):
-    def __init__(self, input_size, hidden_layers, num_classes=3, dropout_rate=0.2, use_batch_norm=True):
+    def __init__(self, input_size, hidden_layers, num_classes=3, dropout_rate=0.2, use_batch_norm=True, config=None):
         super(MLPClassifier, self).__init__()
         
         layers = []
@@ -108,7 +108,7 @@ class MLPClassifier(nn.Module):
             if use_batch_norm:
                 # Use batch norm only if we're guaranteeing fixed batch sizes
                 # Otherwise fall back to group norm which is more stable
-                if config['training'].get('drop_last', True):
+                if config is None or config.get('training', {}).get('drop_last', True):
                     layers.append(nn.BatchNorm1d(hidden_size))
                 else:
                     # Group norm with 8 groups is a good default
@@ -349,13 +349,14 @@ class HyperparameterTuner:
         use_batch_norm = trial.suggest_categorical('use_batch_norm', [True, False])
         weight_decay = 0.0 if use_batch_norm else trial.suggest_float("weight_decay", 1e-5, 1e-2, log=True)
         
-        # Create model
+        # Create model with config
         model = MLPClassifier(
             input_size=self.config['model']['input_size'],
             hidden_layers=hidden_layers,
             num_classes=self.config['model']['num_classes'],
             dropout_rate=dropout_rate,
-            use_batch_norm=use_batch_norm
+            use_batch_norm=use_batch_norm,
+            config=self.config  # Pass config here
         )
         
         # Create optimizer
@@ -469,13 +470,14 @@ def restore_best_model(config):
     # Check if checkpoint exists
     if not os.path.exists(checkpoint_path):
         print(f"No checkpoint found at {checkpoint_path}. Creating new model...")
-        # Create a new model with default parameters
+        # Create a new model with default parameters and config
         model = MLPClassifier(
             input_size=config['model']['input_size'],
             hidden_layers=[256, 128, 64],  # Default architecture
             num_classes=config['model']['num_classes'],
             dropout_rate=0.2,
-            use_batch_norm=True
+            use_batch_norm=True,
+            config=config  # Pass config here
         )
         
         optimizer = getattr(torch.optim, config['training']['optimizer_choice'])(
@@ -505,7 +507,8 @@ def restore_best_model(config):
         hidden_layers=checkpoint['hyperparameters']['hidden_layers'],
         num_classes=config['model']['num_classes'],
         dropout_rate=checkpoint['hyperparameters']['dropout_rate'],
-        use_batch_norm=checkpoint['hyperparameters']['use_batch_norm']
+        use_batch_norm=checkpoint['hyperparameters']['use_batch_norm'],
+        config=config  # Pass config here
     )
     
     # Create optimizer
@@ -561,7 +564,8 @@ def train_final_model(config, train_loader, val_loader):
         hidden_layers=best_model_config['hidden_layers'],
         num_classes=config['model']['num_classes'],
         dropout_rate=best_model_config['dropout_rate'],
-        use_batch_norm=best_model_config['use_batch_norm']
+        use_batch_norm=best_model_config['use_batch_norm'],
+        config=config  # Pass config here
     )
     
     criterion = getattr(nn, config['training']['loss_function'])()
