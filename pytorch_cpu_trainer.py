@@ -149,7 +149,7 @@ class PyTorchTrainer:
         # Initialize mixed precision settings based on hardware support
         self.use_mixed_precision = hasattr(ipex, 'core') and ipex.core.onednn_has_bf16_support()
         if self.use_mixed_precision:
-            self.scaler = torch.cpu.amp.GradScaler()
+            self.scaler = torch.amp.GradScaler()
         
     def train_epoch(self, train_loader):
         """Trains the model for one epoch."""
@@ -168,7 +168,7 @@ class PyTorchTrainer:
             batch_y = batch_y.to(self.device)
             
             # Forward pass with mixed precision
-            with torch.cpu.amp.autocast(enabled=self.use_mixed_precision, dtype=torch.bfloat16):
+            with torch.amp.autocast('cpu', enabled=self.use_mixed_precision, dtype=torch.bfloat16):
                 outputs = self.model(batch_X)
                 loss = self.criterion(outputs, batch_y) / self.grad_accum_steps
             
