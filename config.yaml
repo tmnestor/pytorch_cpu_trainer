@@ -1,15 +1,15 @@
-# best_model:
-#   best_metric_name: f1_score
-#   best_metric_value: 36.5
-#   dropout_rate: 0.20115280210708425
-#   hidden_layers:
-#   - 177
-#   - 487
-#   - 217
-#   - 32
-#   learning_rate: 1.0397486776002072e-05
-#   use_batch_norm: false
-#   weight_decay: 0.00027323564506194205
+best_model:
+  best_metric_name: f1_score
+  best_metric_value: 34.5
+  dropout_rate: 0.32395285736216783
+  hidden_layers:
+  - 71
+  - 167
+  - 312
+  - 238
+  learning_rate: 3.508464333826424e-05
+  use_batch_norm: true
+  weight_decay: 0.0
 data:
   target_column: target
   train_path: input_data/train.csv
@@ -80,12 +80,12 @@ training:
     max_checkpoints: 5
     save_dir: checkpoints
   cpu_optimization:
-    enable_mkldnn: true
-    num_threads: auto  # 'auto' or specific number
-    use_bfloat16: true
-    optimization_level: 2  # 0: disabled, 1: conservative, 2: aggressive
-    jit_compile: true
     channels_last: true
+    enable_mkldnn: true
+    jit_compile: true
+    num_threads: auto
+    optimization_level: 2
+    use_bfloat16: true
   dataloader:
     num_workers: 8
     persistent_workers: true

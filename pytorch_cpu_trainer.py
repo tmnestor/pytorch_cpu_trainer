@@ -417,8 +417,8 @@ def restore_best_model(config):
             }
         }
 
-    # Load existing checkpoint
-    checkpoint = torch.load(checkpoint_path)
+    # Load existing checkpoint with weights_only=True
+    checkpoint = torch.load(checkpoint_path, weights_only=True)
     # Create model with saved hyperparameters
     model = MLPClassifier(
         input_size=config['model']['input_size'],
@@ -577,9 +577,9 @@ class CPUOptimizer:
         if optimizations['enable_mkldnn']:
             torch.backends.mkldnn.enabled = True
         
-        # Configure IPEX if available
-        if features['ipex'] and self.model is not None:
-            self.model = ipex.optimize(self.model)
+        # Configure IPEX if available and model exists
+        if features['ipex'] and self.model is not None and hasattr(self, 'optimizer'):
+            self.model = ipex.optimize(self.model, optimizer=self.optimizer)
             if optimizations['use_bfloat16']:
                 self.model = self.model.to(torch.bfloat16)
         
@@ -658,12 +658,6 @@ def main():
     model = restored['model']
     optimizer = restored['optimizer']
     
-    # Initialize CPU optimization with model
-    cpu_optimizer = CPUOptimizer(config, model)
-    optimizations = cpu_optimizer.configure_optimizations()
-    # Get the optimized model back
-    model = cpu_optimizer.model
-    
     # Create criterion for evaluation
     criterion = getattr(nn, config['training']['loss_function'])()
     
@@ -675,6 +669,13 @@ def main():
         steps_per_epoch=len(train_loader),
         **config['training']['scheduler']['params']
     )
+    
+    # Initialize CPU optimization with model and optimizer
+    cpu_optimizer = CPUOptimizer(config, model)
+    cpu_optimizer.optimizer = optimizer  # Add optimizer to CPU optimizer
+    optimizations = cpu_optimizer.configure_optimizations()
+    # Get the optimized model back
+    model = cpu_optimizer.model
     
     # Create trainer for evaluation
     trainer = PyTorchTrainer(
