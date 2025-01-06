@@ -747,6 +747,15 @@ def main():
     if target_column not in train_df.columns or target_column not in val_df.columns:
         raise ValueError(f"Target column '{target_column}' not found in data")
     
+    # Calculate optimal number of workers
+    if config['training']['dataloader']['num_workers'] == 'auto':
+        num_cpu = psutil.cpu_count(logical=False)
+        optimal_workers = min(2, max(1, num_cpu - 1)) if num_cpu else 0
+    else:
+        optimal_workers = int(config['training']['dataloader']['num_workers'])
+    
+    logger.info(f"Using {optimal_workers} worker processes for data loading")
+    
     # Calculate batch size that divides dataset size evenly
     base_batch_size = config['training']['batch_size']
     train_size = len(train_df)
