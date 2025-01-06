@@ -1,14 +1,13 @@
-# best_model:
-#   best_metric_name: f1_score
-#   best_metric_value: 35.2
-#   dropout_rate: 0.1260525437606432
-#   hidden_layers:
-#   - 297
-#   - 59
-#   - 349
-#   learning_rate: 0.0001343444884335498
-#   use_batch_norm: false
-#   weight_decay: 5.387015418363971e-05
+best_model:
+  best_metric_name: f1_score
+  best_metric_value: 36.8
+  dropout_rate: 0.142400988114008
+  hidden_layers:
+  - 459
+  - 104
+  learning_rate: 9.410105338834264e-05
+  use_batch_norm: false
+  weight_decay: 0.00018804080373396002
 data:
   target_column: target
   train_path: input_data/train.csv
@@ -66,7 +65,7 @@ optimization:
     max_steps: 1000
     min_steps: 0
 training:
-  batch_norm:  # Renamed to norm for clarity since we're using LayerNorm
+  batch_norm:
     eps: 1.0e-05
     stabilize_interval: 100
   batch_size: 128
@@ -76,16 +75,16 @@ training:
     max_checkpoints: 5
     save_dir: checkpoints
   cpu_optimization:
-    channels_last: false  # Set to false since we're using 2D data
+    channels_last: false
     enable_mkldnn: true
     fast_math: true
+    graph_optimization: true
     jit_compile: true
     kernel_mode: aggressive
     num_threads: auto
     numa_aware: true
-    optimization_level: 3  # Increased from 2
+    optimization_level: 3
     use_bfloat16: true
-    graph_optimization: true  # New setting for oneDNN graph optimization
   dataloader:
     num_workers: auto
     persistent_workers: true

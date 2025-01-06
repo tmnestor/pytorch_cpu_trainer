@@ -499,7 +499,43 @@ def restore_best_model(config):
     """Utility function to restore the best model and its optimizer."""
     checkpoint_path = config['model']['save_path']
     
-    # Create a new model with default parameters and config
+    try:
+        # Try to load checkpoint first to get architecture
+        if os.path.exists(checkpoint_path):
+            checkpoint = torch.load(checkpoint_path, weights_only=True)
+            # Create model with architecture from checkpoint
+            model = MLPClassifier(
+                input_size=config['model']['input_size'],
+                hidden_layers=checkpoint['hyperparameters']['hidden_layers'],
+                num_classes=config['model']['num_classes'],
+                dropout_rate=checkpoint['hyperparameters']['dropout_rate'],
+                use_batch_norm=checkpoint['hyperparameters']['use_batch_norm'],
+                config=config
+            )
+            
+            optimizer = getattr(torch.optim, checkpoint['optimizer_name'])(
+                model.parameters(),
+                lr=checkpoint['hyperparameters']['lr'],
+                weight_decay=checkpoint['hyperparameters'].get('weight_decay', 0.0)
+            )
+            
+            # Load states
+            model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            
+            return {
+                'model': model,
+                'optimizer': optimizer,
+                'metric_name': checkpoint['metric_name'],
+                'metric_value': checkpoint['metric_value'],
+                'hyperparameters': checkpoint['hyperparameters']
+            }
+            
+    except Exception as e:
+        logger = setup_logger(config, 'MLPTrainer')
+        logger.warning(f"Failed to load checkpoint: {e}. Using default model.")
+    
+    # Create default model if no checkpoint or loading failed
     model = MLPClassifier(
         input_size=config['model']['input_size'],
         hidden_layers=[256, 128, 64],  # Default architecture
@@ -514,24 +550,6 @@ def restore_best_model(config):
         **config['training']['optimizer_params'][config['training']['optimizer_choice']]
     )
     
-    # Only try to load checkpoint if it exists
-    if os.path.exists(checkpoint_path):
-        try:
-            checkpoint = torch.load(checkpoint_path, weights_only=True)
-            model.load_state_dict(checkpoint['model_state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            return {
-                'model': model,
-                'optimizer': optimizer,
-                'metric_name': checkpoint['metric_name'],
-                'metric_value': checkpoint['metric_value'],
-                'hyperparameters': checkpoint['hyperparameters']
-            }
-        except Exception as e:
-            logger = setup_logger(config, 'MLPTrainer')
-            logger.warning(f"Failed to load checkpoint: {e}. Using default model.")
-    
-    # Return default model if no checkpoint or loading failed
     return {
         'model': model,
         'optimizer': optimizer,
