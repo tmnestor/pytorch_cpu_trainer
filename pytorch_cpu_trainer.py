@@ -109,10 +109,11 @@ class MLPClassifier(nn.Module):
         for hidden_size in hidden_layers:
             # Main layer
             self.layers.append(nn.Linear(prev_size, hidden_size))
-            # LayerNorm instead of BatchNorm
-            self.norms.append(nn.LayerNorm(hidden_size))
-            # GELU instead of ReLU
-            # Dropout
+            # BatchNorm1d with fixed momentum for stable training
+            if use_batch_norm:
+                self.norms.append(nn.BatchNorm1d(hidden_size, momentum=0.1))
+            else:
+                self.norms.append(nn.Identity())  # No normalization
             self.drops.append(nn.Dropout(dropout_rate))
             # Residual connection if sizes match
             if prev_size == hidden_size:
@@ -124,14 +125,14 @@ class MLPClassifier(nn.Module):
         
         self.final = nn.Linear(prev_size, num_classes)
         self.gelu = nn.GELU()
-        
-    def forward(self, x):  # Fix parameter name from 'xdelete' to 'x'
+    
+    def forward(self, x):
         prev_x = x
         for i, (layer, norm, drop, residual) in enumerate(zip(
             self.layers, self.norms, self.drops, self.residuals)):
             # Main branch
             x = layer(x)
-            x = norm(x)
+            x = norm(x)  # BatchNorm1d is stable with fixed batch sizes
             x = self.gelu(x)
             x = drop(x)
             
