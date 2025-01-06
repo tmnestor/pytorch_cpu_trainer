@@ -204,9 +204,9 @@ class PyTorchTrainer:
             self.swa_scheduler = None
             self.swa_start = float('inf')
         
-        # Initialize warmup
-        if config and config['training']['warmup']['enabled']:
-            warmup_steps = config['training']['warmup']['max_steps']
+        # Initialize warmup with safe defaults
+        if config and config.get('training', {}).get('warmup', {}).get('enabled', False):
+            warmup_steps = config['training']['warmup'].get('max_steps', 1000)
             initial_lr = config['training']['optimizer_params'][config['training']['optimizer_choice']]['lr'] / 100
             target_lr = config['training']['optimizer_params'][config['training']['optimizer_choice']]['lr']
             self.warmup_scheduler = CPUWarmupScheduler(optimizer, warmup_steps, initial_lr, target_lr)

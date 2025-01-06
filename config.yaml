@@ -212,3 +212,8 @@ training:
     metrics:
     - accuracy
     - f1_score
+  warmup:
+    enabled: true
+    max_steps: 1000
+    min_steps: 500
+    initial_lr_factor: 0.01  # Initial LR will be base_lr * this factor
