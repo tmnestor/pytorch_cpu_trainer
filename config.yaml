@@ -15,6 +15,15 @@ data:
   target_column: target
   train_path: input_data/train.csv
   val_path: input_data/val.csv
+default_model:
+  dropout_rate: 0.38309721853673
+  hidden_layers:
+  - 314
+  - 314
+  - 314
+  learning_rate: 0.0010962970863396323
+  use_batch_norm: true
+  weight_decay: 0.0
 logging:
   console_level: WARNING
   directory: logs
@@ -30,10 +39,10 @@ logging:
       filename: mlptrainer.log
       level: INFO
 model:
+  history_db: checkpoints/model_history.db
   input_size: 7
   num_classes: 5
   save_path: checkpoints/model.pt
-  history_db: checkpoints/model_history.db
 optimization:
   early_stopping:
     min_delta: 0.001

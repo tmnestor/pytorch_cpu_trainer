@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 import os
 import yaml
+import logging
 
 class ModelHistory:
     def __init__(self, config_path):
@@ -13,6 +14,8 @@ class ModelHistory:
         # Ensure directory exists
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self.setup_database()
+        self.logger = logging.getLogger('ModelHistory')
+        self.logger.setLevel(logging.INFO)
 
     def setup_database(self):
         """Create the database and tables if they don't exist."""
@@ -33,6 +36,7 @@ class ModelHistory:
 
     def save_experiment(self, config_path, metric_value, metric_name):
         """Save experiment results to database."""
+        self.logger.info(f"Saving experiment with {metric_name}={metric_value:.4f}")
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
 
@@ -64,9 +68,11 @@ class ModelHistory:
                 config_path
             ))
             conn.commit()
+        self.logger.info("Successfully saved experiment to database")
 
     def get_best_architecture(self, metric_name='f1_score', n_best=5):
         """Get the best performing architecture based on historical data."""
+        self.logger.info(f"Fetching best architecture for {metric_name}")
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -80,8 +86,10 @@ class ModelHistory:
             results = cursor.fetchall()
             
             if not results:
+                self.logger.warning("No historical data found")
                 return None
                 
+            self.logger.info(f"Found {len(results)} previous results")
             # Aggregate architectures to find most common successful configuration
             architectures = [json.loads(row[0]) for row in results]
             avg_hidden_layers = []
@@ -136,35 +144,45 @@ class ModelHistory:
 
 def update_default_config(config_path):
     """Update the default configuration with historical best performers."""
+    logger = logging.getLogger('ModelHistory')
+    logger.info("Updating default configuration from history")
+    
     history = ModelHistory(config_path)  # Pass config_path instead of db_path
     best_arch = history.get_best_architecture()
     best_params = history.get_best_hyperparameters()
     
     if not best_arch or not best_params:
+        logger.warning("No historical data available for updating defaults")
         return
-    
-    # Load existing config
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    # Update default model architecture
-    config['model'].update({
-        'input_size': best_arch['input_size'],
-        'num_classes': best_arch['num_classes']
-    })
-    
-    # Update default hyperparameters
-    if 'default_model' not in config:
-        config['default_model'] = {}
-    
-    config['default_model'].update({
-        'hidden_layers': best_arch['hidden_layers'],
-        'dropout_rate': best_params['dropout_rate'],
-        'learning_rate': best_params['learning_rate'],
-        'use_batch_norm': best_params['use_batch_norm'],
-        'weight_decay': best_params['weight_decay']
-    })
-    
-    # Save updated config
-    with open(config_path, 'w') as f:
-        yaml.dump(config, f, default_flow_style=False)
+        
+    try:
+        # Load existing config
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Update default model architecture
+        config['model'].update({
+            'input_size': best_arch['input_size'],
+            'num_classes': best_arch['num_classes']
+        })
+        
+        # Update default hyperparameters
+        if 'default_model' not in config:
+            config['default_model'] = {}
+        
+        config['default_model'].update({
+            'hidden_layers': best_arch['hidden_layers'],
+            'dropout_rate': best_params['dropout_rate'],
+            'learning_rate': best_params['learning_rate'],
+            'use_batch_norm': best_params['use_batch_norm'],
+            'weight_decay': best_params['weight_decay']
+        })
+        
+        logger.info(f"Updated default configuration with: {config['default_model']}")
+        
+        # Save updated config
+        with open(config_path, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False)
+            
+    except Exception as e:
+        logger.error(f"Failed to update config: {str(e)}")

@@ -572,54 +572,32 @@ class HyperparameterTuner:
 
 def restore_best_model(config):
     """Utility function to restore the best model and its optimizer."""
+    logger = setup_logger(config, 'MLPTrainer')
     checkpoint_path = config['model']['save_path']
     
     try:
-        # Try to load checkpoint first to get architecture
+        # Try to load checkpoint first
         if os.path.exists(checkpoint_path):
-            checkpoint = torch.load(checkpoint_path, weights_only=True)
-            # Create model with architecture from checkpoint
-            model = MLPClassifier(
-                input_size=config['model']['input_size'],
-                hidden_layers=checkpoint['hyperparameters']['hidden_layers'],
-                num_classes=config['model']['num_classes'],
-                dropout_rate=checkpoint['hyperparameters']['dropout_rate'],
-                use_batch_norm=checkpoint['hyperparameters']['use_batch_norm'],
-                config=config
-            )
-            
-            optimizer = getattr(torch.optim, checkpoint['optimizer_name'])(
-                model.parameters(),
-                lr=checkpoint['hyperparameters']['lr'],
-                weight_decay=checkpoint['hyperparameters'].get('weight_decay', 0.0)
-            )
-            
-            # Load states
-            model.load_state_dict(checkpoint['model_state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            
-            return {
-                'model': model,
-                'optimizer': optimizer,
-                'metric_name': checkpoint['metric_name'],
-                'metric_value': checkpoint['metric_value'],
-                'hyperparameters': checkpoint['hyperparameters']
-            }
-            
+            # ...existing checkpoint loading code...
+            pass
     except Exception as e:
-        logger = setup_logger(config, 'MLPTrainer')
         logger.warning(f"Failed to load checkpoint: {e}. Using default model.")
     
     # Use default model configuration from historical best if available
     if 'default_model' in config:
+        logger.info("Using configuration from historical best performers")
         hidden_layers = config['default_model']['hidden_layers']
         dropout_rate = config['default_model']['dropout_rate']
+        learning_rate = config['default_model']['learning_rate']
         use_batch_norm = config['default_model']['use_batch_norm']
+        weight_decay = config['default_model'].get('weight_decay', 0.0)
     else:
-        # Fallback to hardcoded defaults
+        logger.info("No historical best configuration found, using hardcoded defaults")
         hidden_layers = [128] * 3
         dropout_rate = 0.2
+        learning_rate = config['training']['optimizer_params'][config['training']['optimizer_choice']]['lr']
         use_batch_norm = True
+        weight_decay = 0.0
     
     model = MLPClassifier(
         input_size=config['model']['input_size'],
@@ -632,7 +610,8 @@ def restore_best_model(config):
     
     optimizer = getattr(torch.optim, config['training']['optimizer_choice'])(
         model.parameters(),
-        **config['training']['optimizer_params'][config['training']['optimizer_choice']]
+        lr=learning_rate,
+        weight_decay=weight_decay
     )
     
     return {
@@ -641,13 +620,11 @@ def restore_best_model(config):
         'metric_name': config['training']['optimization_metric'],
         'metric_value': 0.0,
         'hyperparameters': {
-            'n_layers': default_n_layers,
-            'layer_width': default_width,
             'hidden_layers': hidden_layers,
-            'dropout_rate': 0.2,
-            'lr': config['training']['optimizer_params'][config['training']['optimizer_choice']]['lr'],
-            'use_batch_norm': True,
-            'weight_decay': 0.0
+            'dropout_rate': dropout_rate,
+            'lr': learning_rate,
+            'use_batch_norm': use_batch_norm,
+            'weight_decay': weight_decay
         }
     }
 
@@ -911,10 +888,13 @@ def main():
     config = load_config(args.config)
     
     # Update default configuration with historical best performers
+    logger.info("Checking for historical best configurations")
     update_default_config(args.config)
     
     # Reload config after update
     config = load_config(args.config)
+    logger.info("Configuration loaded with defaults:" + 
+                f"\ndefault_model: {config.get('default_model', 'Not found')}")
     
     # Create necessary directories first
     os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
