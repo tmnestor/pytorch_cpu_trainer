@@ -125,7 +125,7 @@ class MLPClassifier(nn.Module):
         self.final = nn.Linear(prev_size, num_classes)
         self.gelu = nn.GELU()
         
-    def forward(self, x):
+    def forward(self, xdelete):
         prev_x = x
         for i, (layer, norm, drop, residual) in enumerate(zip(
             self.layers, self.norms, self.drops, self.residuals)):
@@ -498,67 +498,51 @@ def restore_best_model(config):
     """Utility function to restore the best model and its optimizer."""
     checkpoint_path = config['model']['save_path']
     
-    # Check if checkpoint exists
-    if not os.path.exists(checkpoint_path):
-        print(f"No checkpoint found at {checkpoint_path}. Creating new model...")
-        # Create a new model with default parameters and config
-        model = MLPClassifier(
-            input_size=config['model']['input_size'],
-            hidden_layers=[256, 128, 64],  # Default architecture
-            num_classes=config['model']['num_classes'],
-            dropout_rate=0.2,
-            use_batch_norm=True,
-            config=config  # Pass config here
-        )
-        
-        optimizer = getattr(torch.optim, config['training']['optimizer_choice'])(
-            model.parameters(),
-            **config['training']['optimizer_params'][config['training']['optimizer_choice']]
-        )
-        
-        return {
-            'model': model,
-            'optimizer': optimizer,
-            'metric_name': config['training']['optimization_metric'],
-            'metric_value': 0.0,
-            'hyperparameters': {
-                'hidden_layers': [256, 128, 64],
-                'dropout_rate': 0.2,
-                'lr': config['training']['optimizer_params'][config['training']['optimizer_choice']]['lr'],
-                'use_batch_norm': True,
-                'weight_decay': 0.0
-            }
-        }
-
-    # Load existing checkpoint with weights_only=True
-    checkpoint = torch.load(checkpoint_path, weights_only=True)
-    # Create model with saved hyperparameters
+    # Create a new model with default parameters and config
     model = MLPClassifier(
         input_size=config['model']['input_size'],
-        hidden_layers=checkpoint['hyperparameters']['hidden_layers'],
+        hidden_layers=[256, 128, 64],  # Default architecture
         num_classes=config['model']['num_classes'],
-        dropout_rate=checkpoint['hyperparameters']['dropout_rate'],
-        use_batch_norm=checkpoint['hyperparameters']['use_batch_norm'],
-        config=config  # Pass config here
+        dropout_rate=0.2,
+        use_batch_norm=True,
+        config=config
     )
     
-    # Create optimizer
-    optimizer = getattr(torch.optim, checkpoint['optimizer_name'])(
+    optimizer = getattr(torch.optim, config['training']['optimizer_choice'])(
         model.parameters(),
-        lr=checkpoint['hyperparameters']['lr'],
-        weight_decay=checkpoint['hyperparameters'].get('weight_decay', 0.0)
+        **config['training']['optimizer_params'][config['training']['optimizer_choice']]
     )
     
-    # Load states
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    # Only try to load checkpoint if it exists
+    if os.path.exists(checkpoint_path):
+        try:
+            checkpoint = torch.load(checkpoint_path, weights_only=True)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            return {
+                'model': model,
+                'optimizer': optimizer,
+                'metric_name': checkpoint['metric_name'],
+                'metric_value': checkpoint['metric_value'],
+                'hyperparameters': checkpoint['hyperparameters']
+            }
+        except Exception as e:
+            logger = setup_logger(config, 'MLPTrainer')
+            logger.warning(f"Failed to load checkpoint: {e}. Using default model.")
     
+    # Return default model if no checkpoint or loading failed
     return {
         'model': model,
         'optimizer': optimizer,
-        'metric_name': checkpoint['metric_name'],
-        'metric_value': checkpoint['metric_value'],
-        'hyperparameters': checkpoint['hyperparameters']
+        'metric_name': config['training']['optimization_metric'],
+        'metric_value': 0.0,
+        'hyperparameters': {
+            'hidden_layers': [256, 128, 64],
+            'dropout_rate': 0.2,
+            'lr': config['training']['optimizer_params'][config['training']['optimizer_choice']]['lr'],
+            'use_batch_norm': True,
+            'weight_decay': 0.0
+        }
     }
 
 def save_best_params_to_config(config_path, best_trial, best_params):
