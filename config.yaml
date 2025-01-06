@@ -38,6 +38,16 @@ training:
       betas: [0.9, 0.999]
       eps: 1.0e-8
 
+  performance:
+    batch_size_multiplier: 1
+    enable_mkldnn: true
+    grad_accum_steps: 4
+    memory_fraction: 0.95
+    num_workers: 8
+    persistent_workers: true
+    pin_memory: false
+    prefetch_factor: 2
+
   cpu_optimization:
     enable_mkldnn: true
     num_threads: auto
