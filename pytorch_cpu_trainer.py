@@ -150,7 +150,8 @@ class PyTorchTrainer:
         total = 0
         
         for batch_X, batch_y in train_loader:
-            batch_X = batch_X.to(self.device, memory_format=torch.channels_last)  # Memory format optimization
+            # Remove channels_last format since we're using 2D data
+            batch_X = batch_X.to(self.device)
             batch_y = batch_y.to(self.device)
             
             self.optimizer.zero_grad(set_to_none=True)  # More efficient than zero_grad()
@@ -609,10 +610,7 @@ class CPUOptimizer:
         # Configure IPEX if available and model exists
         if features['ipex'] and self.model is not None and hasattr(self, 'optimizer'):
             try:
-                # Configure IPEX with channels last memory format
-                self.model = self.model.to(memory_format=torch.channels_last)
-                
-                # Enable IPEX optimizations with dtype based on support
+                # Remove channels_last memory format for 2D data
                 dtype = torch.bfloat16 if features['bf16_supported'] else torch.float32
                 self.logger.info(f"Using dtype: {dtype}")
                 
