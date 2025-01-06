@@ -100,28 +100,49 @@ class MLPClassifier(nn.Module):
     def __init__(self, input_size, hidden_layers, num_classes=3, dropout_rate=0.2, use_batch_norm=True, config=None):
         super(MLPClassifier, self).__init__()
         
-        layers = []
+        self.layers = nn.ModuleList()
+        self.norms = nn.ModuleList()
+        self.drops = nn.ModuleList()
+        self.residuals = nn.ModuleList()
         prev_size = input_size
         
         for hidden_size in hidden_layers:
-            layers.append(nn.Linear(prev_size, hidden_size))
-            if use_batch_norm:
-                # Use batch norm only if we're guaranteeing fixed batch sizes
-                # Otherwise fall back to group norm which is more stable
-                if config is None or config.get('training', {}).get('drop_last', True):
-                    layers.append(nn.BatchNorm1d(hidden_size))
-                else:
-                    # Group norm with 8 groups is a good default
-                    layers.append(nn.GroupNorm(8, hidden_size))
-            layers.append(nn.ReLU())
-            layers.append(nn.Dropout(dropout_rate))
+            # Main layer
+            self.layers.append(nn.Linear(prev_size, hidden_size))
+            # LayerNorm instead of BatchNorm
+            self.norms.append(nn.LayerNorm(hidden_size))
+            # GELU instead of ReLU
+            # Dropout
+            self.drops.append(nn.Dropout(dropout_rate))
+            # Residual connection if sizes match
+            if prev_size == hidden_size:
+                self.residuals.append(True)
+            else:
+                # Add projection for residual if sizes don't match
+                self.residuals.append(nn.Linear(prev_size, hidden_size))
             prev_size = hidden_size
         
-        layers.append(nn.Linear(prev_size, num_classes))
-        self.model = nn.Sequential(*layers)
-    
+        self.final = nn.Linear(prev_size, num_classes)
+        self.gelu = nn.GELU()
+        
     def forward(self, x):
-        return self.model(x)
+        prev_x = x
+        for i, (layer, norm, drop, residual) in enumerate(zip(
+            self.layers, self.norms, self.drops, self.residuals)):
+            # Main branch
+            x = layer(x)
+            x = norm(x)
+            x = self.gelu(x)
+            x = drop(x)
+            
+            # Residual connection
+            if isinstance(residual, bool) and residual:
+                x = x + prev_x
+            elif isinstance(residual, nn.Module):
+                x = x + residual(prev_x)
+            prev_x = x
+            
+        return self.final(x)
         
 class PyTorchTrainer:
     """A generic PyTorch trainer class.
@@ -152,10 +173,20 @@ class PyTorchTrainer:
             self.grad_accum_steps = config['training']['memory_management']['optimization']['grad_accumulation']['max_steps']
             self.batch_multiplier = config['training']['performance']['batch_size_multiplier']
         
+        # Enable oneDNN optimizations
+        if hasattr(torch, 'backends') and hasattr(torch.backends, 'mkldnn'):
+            torch.backends.mkldnn.enabled = True
+            torch.backends.mkl.enabled = True
+            # Set optimized memory format
+            model = model.to(memory_format=torch.channels_last)
+            
         # Initialize mixed precision settings based on hardware support
         self.use_mixed_precision = hasattr(ipex, 'core') and ipex.core.onednn_has_bf16_support()
         if self.use_mixed_precision:
             self.scaler = torch.amp.GradScaler()
+            # Enable graph mode for better performance
+            torch._C._jit_set_profiling_mode(False)
+            torch._C._jit_set_profiling_executor(False)
         
     def train_epoch(self, train_loader):
         """Trains the model for one epoch."""

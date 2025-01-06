@@ -1,15 +1,14 @@
-# best_model:
-#   best_metric_name: f1_score
-#   best_metric_value: 34.5
-#   dropout_rate: 0.32395285736216783
-#   hidden_layers:
-#   - 71
-#   - 167
-#   - 312
-#   - 238
-#   learning_rate: 3.508464333826424e-05
-#   use_batch_norm: true
-#   weight_decay: 0.0
+best_model:
+  best_metric_name: f1_score
+  best_metric_value: 35.2
+  dropout_rate: 0.1260525437606432
+  hidden_layers:
+  - 297
+  - 59
+  - 349
+  learning_rate: 0.0001343444884335498
+  use_batch_norm: false
+  weight_decay: 5.387015418363971e-05
 data:
   target_column: target
   train_path: input_data/train.csv
@@ -67,34 +66,33 @@ optimization:
     max_steps: 1000
     min_steps: 0
 training:
-  batch_norm:
+  batch_norm:  # Renamed to norm for clarity since we're using LayerNorm
     eps: 1.0e-05
-    momentum: 0.1  # Fixed momentum for 2D data
     stabilize_interval: 100
-  batch_size: 128  # Set a reasonable fixed batch size that divides dataset size evenly
+  batch_size: 128
   checkpointing:
     enabled: true
     frequency: 10
     max_checkpoints: 5
     save_dir: checkpoints
   cpu_optimization:
-    channels_last: false
+    channels_last: false  # Set to false since we're using 2D data
     enable_mkldnn: true
-    jit_compile: true
-    num_threads: auto
-    optimization_level: 2
-    use_bfloat16: true
-    numa_aware: true
-    kernel_mode: "aggressive"
     fast_math: true
+    jit_compile: true
+    kernel_mode: aggressive
+    num_threads: auto
+    numa_aware: true
+    optimization_level: 3  # Increased from 2
+    use_bfloat16: true
+    graph_optimization: true  # New setting for oneDNN graph optimization
   dataloader:
-    # Automatically adjust based on system capabilities
-    num_workers: auto  # Changed from 8 to auto
+    num_workers: auto
     persistent_workers: true
-    pin_memory: false  # Set to false for CPU training
+    pin_memory: false
     prefetch_factor: 2
   device: cpu
-  drop_last: true  # Always true for consistent batch norm
+  drop_last: true
   epochs: 100
   loss_function: CrossEntropyLoss
   memory_management:
@@ -102,9 +100,9 @@ training:
     optimization:
       grad_accumulation:
         enabled: true
-        max_steps: 16  # Increased from 8
-        min_steps: 1
         initial_steps: 4
+        max_steps: 16
+        min_steps: 1
       initial_batch_size_factor: 2.0
       min_batch_size: 1
       target_memory_usage: 0.95
@@ -112,8 +110,8 @@ training:
       enabled: true
       export_profile: true
       log_frequency: 100
-      profile_path: memory_profile.json
       memory_profiling: true
+      profile_path: memory_profile.json
   metrics:
     available:
       accuracy:
@@ -162,17 +160,17 @@ training:
       lr: 0.01
       momentum: 0.9
   performance:
-    batch_size_multiplier: 1  # Set to 1 to maintain fixed batch size
+    batch_size_multiplier: 1
     enable_mkl: true
     enable_mkldnn: true
     grad_accum_steps: 4
+    memory_fraction: 0.95
     mixed_precision: true
     num_workers: 8
     persistent_workers: true
     pin_memory: true
     prefetch_factor: 2
     vectorize_code: true
-    memory_fraction: 0.95
   profiling:
     enabled: true
     export_trace: true
