@@ -539,7 +539,7 @@ class CPUOptimizer:
     def __init__(self, config, model=None):
         self.config = config
         self.model = model
-        self.logger = None  # Will be set in main()
+        self.logger = setup_logger(config, 'cpu_optimization')  # Initialize logger directly
         self.cpu_info = cpuinfo.get_cpu_info()
         
     def detect_cpu_features(self):
@@ -626,17 +626,16 @@ def main():
     config_path = 'config.yaml'
     config = load_config(config_path)
     
-    # Create necessary directories
+    # Create necessary directories first
     os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
     os.makedirs(config['logging']['directory'], exist_ok=True)
     
-    # Set up main logger first
+    # Set up main logger
     logger = setup_logger(config, 'MLPTrainer')
     logger.info("Starting training process...")
     
-    # Initialize CPU optimization with its own logger
+    # Initialize CPU optimization (logger is now initialized in constructor)
     cpu_optimizer = CPUOptimizer(config)
-    cpu_optimizer.logger = setup_logger(config, 'cpu_optimization')
     cpu_optimizer.configure_thread_settings()
     
     # Set seed for reproducibility
