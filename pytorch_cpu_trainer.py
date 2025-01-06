@@ -333,6 +333,29 @@ class PyTorchTrainer:
         avg_loss = total_loss / len(val_loader) if len(val_loader) > 0 else float('inf')
         return avg_loss, accuracy, f1
 
+    def plot_learning_curves(self, train_losses, val_losses, train_metrics, val_metrics, metric_name='Accuracy'):
+        """Plots the learning curves for loss and chosen metric (accuracy or F1)."""
+        plt.figure(figsize=(10, 6))
+        sns.set_style("whitegrid")
+        
+        # Normalize values for better visualization
+        max_loss = max(max(train_losses), max(val_losses)) if train_losses and val_losses else 1
+        max_metric = max(max(train_metrics), max(val_metrics)) if train_metrics and val_metrics else 1
+        
+        epochs = range(1, len(train_losses) + 1)
+        
+        plt.plot(epochs, [x/max_metric for x in train_metrics], label=f'Training {metric_name}')
+        plt.plot(epochs, [x/max_metric for x in val_metrics], label=f'Validation {metric_name}')
+        plt.plot(epochs, [x/max_loss for x in train_losses], label='Training Loss')
+        plt.plot(epochs, [x/max_loss for x in val_losses], label='Validation Loss')
+        
+        plt.xlabel("Epoch")
+        plt.ylabel("Normalized Value")
+        plt.title(f"Training and Validation Loss and {metric_name} Curves")
+        plt.legend()
+        plt.savefig('learning_curves.png')
+        plt.close()
+
     def train(self, train_loader, val_loader, epochs, metric='accuracy'):
         """Trains the model for specified number of epochs. 
         Monitors specified validation metric for early stopping."""
