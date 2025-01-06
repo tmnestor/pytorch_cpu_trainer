@@ -1,13 +1,12 @@
 best_model:
   best_metric_name: f1_score
   best_metric_value: 36.8
-  dropout_rate: 0.142400988114008
+  dropout_rate: 0.2642273283611098
   hidden_layers:
-  - 459
-  - 104
-  learning_rate: 9.410105338834264e-05
+  - 196
+  learning_rate: 0.00011322398223060966
   use_batch_norm: false
-  weight_decay: 0.00018804080373396002
+  weight_decay: 0.00038729695652991775
 data:
   target_column: target
   train_path: input_data/train.csv
@@ -93,6 +92,9 @@ training:
   device: cpu
   drop_last: true
   epochs: 100
+  label_smoothing:
+    enabled: true
+    factor: 0.1
   loss_function: CrossEntropyLoss
   memory_management:
     enabled: true
@@ -183,6 +185,11 @@ training:
       pct_start: 0.3
     type: OneCycleLR
   seed: 42
+  swa:
+    enabled: true
+    start_epoch: 75
+    lr: 0.001
+    momentum: 0.9
   validation:
     confidence_analysis:
       enabled: true
@@ -203,4 +210,5 @@ training:
       save_confusion_matrix: true
     frequency: 1
     metrics:
-    - accuracy    - f1_score
+    - accuracy
+    - f1_score

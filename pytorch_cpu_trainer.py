@@ -22,6 +22,7 @@ import psutil
 import cpuinfo
 import intel_extension_for_pytorch as ipex
 import multiprocessing
+import torch.optim.swa_utils as swa_utils  # Add at top with other imports
 
 
 def load_config(config_path):
@@ -189,6 +190,29 @@ class PyTorchTrainer:
             torch._C._jit_set_profiling_mode(False)
             torch._C._jit_set_profiling_executor(False)
         
+        # Initialize SWA if enabled
+        swa_enabled = config.get('training', {}).get('swa', {}).get('enabled', False)
+        if swa_enabled:
+            self.swa_model = swa_utils.AveragedModel(model)
+            self.swa_scheduler = swa_utils.SWALR(
+                optimizer,
+                swa_lr=config['training']['swa']['lr']
+            )
+            self.swa_start = config['training']['swa']['start_epoch']
+        else:
+            self.swa_model = None
+            self.swa_scheduler = None
+            self.swa_start = float('inf')
+        
+        # Initialize warmup
+        if config and config['training']['warmup']['enabled']:
+            warmup_steps = config['training']['warmup']['max_steps']
+            initial_lr = config['training']['optimizer_params'][config['training']['optimizer_choice']]['lr'] / 100
+            target_lr = config['training']['optimizer_params'][config['training']['optimizer_choice']]['lr']
+            self.warmup_scheduler = CPUWarmupScheduler(optimizer, warmup_steps, initial_lr, target_lr)
+        else:
+            self.warmup_scheduler = None
+        
     def train_epoch(self, train_loader):
         """Trains the model for one epoch."""
         self.model.train()
@@ -294,7 +318,23 @@ class PyTorchTrainer:
         best_val_metric = 0
         
         for epoch in tqdm(range(epochs), desc='Training'):
+            if epoch < self.warmup_scheduler.warmup_steps:
+                self.warmup_scheduler.step()
+            elif epoch >= self.swa_start and self.swa_model is not None:
+                self.swa_model.update_parameters(self.model)
+                self.swa_scheduler.step()
+            else:
+                if self.scheduler is not None:
+                    self.scheduler.step()
+            
             train_loss, train_accuracy = self.train_epoch(train_loader)
+            
+            # Update BatchNorm for SWA model if needed
+            if epoch == epochs - 1 and self.swa_model is not None:
+                torch.optim.swa_utils.update_bn(train_loader, self.swa_model)
+                # Evaluate with SWA model
+                self.model = self.swa_model
+            
             val_loss, val_accuracy, val_f1 = self.evaluate(val_loader)
             
             # Select metric based on config
@@ -749,6 +789,35 @@ class CPUOptimizer:
         self.logger.info(f"MKL-DNN enabled: {optimizations['enable_mkldnn']}")
         self.logger.info(f"BFloat16 enabled: {optimizations['use_bfloat16']}")
 
+class LabelSmoothingLoss(nn.Module):
+    def __init__(self, num_classes, smoothing=0.1):
+        super(LabelSmoothingLoss, self).__init__()
+        self.smoothing = smoothing
+        self.num_classes = num_classes
+        
+    def forward(self, pred, target):
+        with torch.no_grad():
+            true_dist = torch.zeros_like(pred)
+            true_dist.fill_(self.smoothing / (self.num_classes - 1))
+            true_dist.scatter_(1, target.unsqueeze(1), 1.0 - self.smoothing)
+        return torch.mean(torch.sum(-true_dist * torch.log_softmax(pred, dim=1), dim=1))
+
+class CPUWarmupScheduler:
+    def __init__(self, optimizer, warmup_steps, initial_lr, target_lr):
+        self.optimizer = optimizer
+        self.warmup_steps = warmup_steps
+        self.initial_lr = initial_lr
+        self.target_lr = target_lr
+        self.current_step = 0
+        
+    def step(self):
+        if self.current_step < self.warmup_steps:
+            progress = self.current_step / self.warmup_steps
+            lr = self.initial_lr + (self.target_lr - self.initial_lr) * progress
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] = lr
+        self.current_step += 1
+
 def main():
     config_path = 'config.yaml'
     config = load_config(config_path)
@@ -858,8 +927,14 @@ def main():
     model = restored['model']
     optimizer = restored['optimizer']
     
-    # Create criterion
-    criterion = getattr(nn, config['training']['loss_function'])()
+    # Create criterion with label smoothing
+    if config['training'].get('label_smoothing', {}).get('enabled', False):
+        criterion = LabelSmoothingLoss(
+            num_classes=config['model']['num_classes'],
+            smoothing=config['training']['label_smoothing']['factor']
+        )
+    else:
+        criterion = getattr(nn, config['training']['loss_function'])()
     
     # Configure scheduler
     scheduler_params = config['training']['scheduler']['params'].copy()
