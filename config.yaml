@@ -69,6 +69,10 @@ optimization:
     enabled: true                     # Whether to use LR warm-up
     max_steps: 1000                   # Maximum warm-up steps
     min_steps: 0                      # Minimum warm-up steps
+  pruning:
+    warm_up_epochs: 3
+    deterioration_threshold: 0.3
+    min_trials_complete: 5
 
 # Training configuration
 training:
