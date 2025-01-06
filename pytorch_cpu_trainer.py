@@ -130,16 +130,17 @@ class PyTorchTrainer:
     
     def __init__(self, model, criterion, optimizer, device='cpu', verbose=False, scheduler=None):
         self.model = model.to(device)
-        if self.config['training']['cpu_optimization']['jit_compile']:
-            self.model = torch.compile(self.model)  # Use PyTorch 2.0 compile
         self.criterion = criterion
         self.optimizer = optimizer
         self.device = device
         self.verbose = verbose
         self.scheduler = scheduler
         self.gradient_clip_val = 1.0
-        # Initialize mixed precision scaler
-        self.scaler = torch.cpu.amp.GradScaler()
+        
+        # Initialize mixed precision settings based on hardware support
+        self.use_mixed_precision = hasattr(ipex, 'core') and ipex.core.onednn_has_bf16_support()
+        if self.use_mixed_precision:
+            self.scaler = torch.cpu.amp.GradScaler()
         
     def train_epoch(self, train_loader):
         """Trains the model for one epoch."""
@@ -154,15 +155,21 @@ class PyTorchTrainer:
             
             self.optimizer.zero_grad(set_to_none=True)  # More efficient than zero_grad()
             
-            with torch.cpu.amp.autocast(enabled=True, dtype=torch.bfloat16):
+            if self.use_mixed_precision:
+                with torch.cpu.amp.autocast(enabled=True, dtype=torch.bfloat16):
+                    outputs = self.model(batch_X)
+                    loss = self.criterion(outputs, batch_y)
+                self.scaler.scale(loss).backward()
+                self.scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_val)
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+            else:
                 outputs = self.model(batch_X)
                 loss = self.criterion(outputs, batch_y)
-            
-            self.scaler.scale(loss).backward()
-            self.scaler.unscale_(self.optimizer)
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_val)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_val)
+                self.optimizer.step()
             
             # Memory cleanup
             total_loss += loss.item()
@@ -554,7 +561,8 @@ class CPUOptimizer:
             'avx512': 'avx512' in self.cpu_info.get('flags', []),
             'avx2': 'avx2' in self.cpu_info.get('flags', []),
             'mkl': hasattr(torch, 'backends') and hasattr(torch.backends, 'mkl') and torch.backends.mkl.is_available(),
-            'ipex': hasattr(torch, 'xpu') or hasattr(torch, 'ipex')
+            'ipex': hasattr(torch, 'xpu') or hasattr(torch, 'ipex'),
+            'bf16_supported': hasattr(ipex, 'core') and ipex.core.onednn_has_bf16_support()
         }
         return features
         
@@ -588,9 +596,9 @@ class CPUOptimizer:
             features['avx512'] or features['avx2']
         ) and self.config['training']['cpu_optimization']['enable_mkldnn']
         
-        # Configure data types
+        # Configure data types based on hardware support
         optimizations['use_bfloat16'] = (
-            features['avx512'] and 
+            features['bf16_supported'] and 
             self.config['training']['cpu_optimization']['use_bfloat16']
         )
         
@@ -600,26 +608,39 @@ class CPUOptimizer:
         
         # Configure IPEX if available and model exists
         if features['ipex'] and self.model is not None and hasattr(self, 'optimizer'):
-            # Configure IPEX with channels last memory format
-            self.model = self.model.to(memory_format=torch.channels_last)
-            
-            # Enable IPEX optimizations with mixed precision
-            optimized = ipex.optimize(
-                self.model,
-                optimizer=self.optimizer,
-                dtype=torch.bfloat16,
-                inplace=True,
-                auto_kernel_selection=True
-            )
-            
-            if isinstance(optimized, tuple):
-                self.model, self.optimizer = optimized
-            else:
-                self.model = optimized
-            
-            # JIT trace for better performance
-            if self.config['training']['cpu_optimization']['jit_compile']:
-                self.model = torch.jit.trace(self.model, torch.randn(1, self.config['model']['input_size']))
+            try:
+                # Configure IPEX with channels last memory format
+                self.model = self.model.to(memory_format=torch.channels_last)
+                
+                # Enable IPEX optimizations with dtype based on support
+                dtype = torch.bfloat16 if features['bf16_supported'] else torch.float32
+                self.logger.info(f"Using dtype: {dtype}")
+                
+                optimized = ipex.optimize(
+                    self.model,
+                    optimizer=self.optimizer,
+                    dtype=dtype,
+                    inplace=True,
+                    auto_kernel_selection=True,
+                    weights_prepack=features['bf16_supported']  # Only prepack weights if BF16 is supported
+                )
+                
+                if isinstance(optimized, tuple):
+                    self.model, self.optimizer = optimized
+                else:
+                    self.model = optimized
+                
+                # JIT trace for better performance if enabled
+                if self.config['training']['cpu_optimization']['jit_compile']:
+                    sample_input = torch.randn(1, self.config['model']['input_size'])
+                    if dtype == torch.bfloat16:
+                        sample_input = sample_input.to(torch.bfloat16)
+                    self.model = torch.jit.trace(self.model, sample_input)
+                    
+            except Exception as e:
+                self.logger.warning(f"IPEX optimization failed: {str(e)}")
+                self.logger.warning("Falling back to default PyTorch execution")
+                optimizations['use_bfloat16'] = False
         
         self.log_optimization_config(features, optimizations)
         return optimizations
