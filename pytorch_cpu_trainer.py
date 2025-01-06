@@ -598,7 +598,12 @@ class CPUOptimizer:
         
         # Configure IPEX if available and model exists
         if features['ipex'] and self.model is not None and hasattr(self, 'optimizer'):
-            self.model = ipex.optimize(self.model, optimizer=self.optimizer)
+            optimized = ipex.optimize(self.model, optimizer=self.optimizer)
+            if isinstance(optimized, tuple):
+                self.model, self.optimizer = optimized
+            else:
+                self.model = optimized
+                
             if optimizations['use_bfloat16']:
                 self.model = self.model.to(torch.bfloat16)
         
@@ -706,8 +711,9 @@ def main():
     cpu_optimizer = CPUOptimizer(config, model)
     cpu_optimizer.optimizer = optimizer  # Add optimizer to CPU optimizer
     optimizations = cpu_optimizer.configure_optimizations()
-    # Get the optimized model back
+    # Get the optimized model and optimizer back
     model = cpu_optimizer.model
+    optimizer = cpu_optimizer.optimizer
     
     # Create trainer for evaluation
     trainer = PyTorchTrainer(
