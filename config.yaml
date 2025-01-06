@@ -1,14 +1,17 @@
 best_model:
   best_metric_name: f1_score
-  best_metric_value: 0.36904761904761907
-  dropout_rate: 0.4291584934545265
+  best_metric_value: 0.75
+  dropout_rate: 0.20070963857073587
   hidden_layers:
-  - 223
-  layer_width: 223
-  learning_rate: 0.0027692937165078205
-  n_layers: 1
-  use_batch_norm: true
-  weight_decay: 0.0
+  - 96
+  - 96
+  - 96
+  - 96
+  layer_width: 96
+  learning_rate: 0.0047484509970228544
+  n_layers: 4
+  use_batch_norm: false
+  weight_decay: 0.00012552075771735108
 data:
   target_column: target
   train_path: input_data/train.csv
@@ -41,14 +44,14 @@ optimization:
     min_trials_complete: 5
     warm_up_epochs: 3
 training:
-  batch_size: 128  # Will be adjusted to nearest power of 2 and to ensure uniform size
+  batch_size: 128
   cpu_optimization:
     enable_mkldnn: true
     jit_compile: true
     num_threads: auto
     use_bfloat16: true
   dataloader:
-    drop_last: true  # Always true for BatchNorm consistency
+    drop_last: true
     num_workers: auto
     persistent_workers: true
     pin_memory: false
