@@ -344,6 +344,7 @@ class HyperparameterTuner:
                 else:
                     patience_counter += 1
                 
+                
                 # Pruning check
                 if epoch >= self.config['optimization']['pruning']['warm_up_epochs']:
                     avg_metric = sum(running_metrics) / len(running_metrics)
