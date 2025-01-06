@@ -1,43 +1,78 @@
+best_model:
+  best_metric_name: f1_score
+  best_metric_value: 37.6
+  dropout_rate: 0.10062301316858495
+  hidden_layers:
+  - 380
+  - 299
+  - 88
+  learning_rate: 0.000622251201941111
+  use_batch_norm: true
+  weight_decay: 0.0
 data:
   target_column: target
   train_path: input_data/train.csv
   val_path: input_data/val.csv
-
+logging:
+  console_level: WARNING
+  directory: logs
+  file_level: INFO
+  handlers:
+    cpu_optimization:
+      filename: cpu_optimization.log
+      level: DEBUG
+    hyperparameter_tuning:
+      filename: hyperparameter_tuning.log
+      level: INFO
+    mlptrainer:
+      filename: mlptrainer.log
+      level: INFO
 model:
   input_size: 4
   num_classes: 4
   save_path: checkpoints/model.pt
-
-logging:
-  directory: logs
-  console_level: WARNING
-  file_level: INFO
-  handlers:
-    hyperparameter_tuning:
-      filename: hyperparameter_tuning.log
-      level: INFO
-    cpu_optimization:
-      filename: cpu_optimization.log
-      level: DEBUG
-    mlptrainer:
-      filename: mlptrainer.log
-      level: INFO
-
+optimization:
+  early_stopping:
+    min_delta: 0.001
+    patience: 10
+  n_trials: 50
+  pruning:
+    deterioration_threshold: 0.3
+    min_trials_complete: 5
+    warm_up_epochs: 3
 training:
+  batch_size: 128
+  cpu_optimization:
+    enable_mkldnn: true
+    jit_compile: true
+    num_threads: auto
+    use_bfloat16: true
+  dataloader:
+    drop_last: true
+    num_workers: auto
+    persistent_workers: true
+    pin_memory: false
+    prefetch_factor: 2
   device: cpu
   epochs: 100
-  batch_size: 128
-  seed: 42
+  label_smoothing:
+    enabled: true
+    factor: 0.1
   loss_function: CrossEntropyLoss
+  memory_management:
+    optimization:
+      grad_accumulation:
+        enabled: true
+        max_steps: 16
   optimization_metric: f1_score
-  
   optimizer_choice: Adam
   optimizer_params:
     Adam:
+      betas:
+      - 0.9
+      - 0.999
+      eps: 1.0e-08
       lr: 0.0001
-      betas: [0.9, 0.999]
-      eps: 1.0e-8
-
   performance:
     batch_size_multiplier: 1
     enable_mkldnn: true
@@ -47,54 +82,19 @@ training:
     persistent_workers: true
     pin_memory: false
     prefetch_factor: 2
-
-  cpu_optimization:
-    enable_mkldnn: true
-    num_threads: auto
-    use_bfloat16: true
-    jit_compile: true
-
-  dataloader:
-    num_workers: auto
-    persistent_workers: true
-    prefetch_factor: 2
-    pin_memory: false
-    drop_last: true
-
-  label_smoothing:
-    enabled: true
-    factor: 0.1
-
-  memory_management:
-    optimization:
-      grad_accumulation:
-        enabled: true
-        max_steps: 16
-
   scheduler:
-    type: OneCycleLR
     params:
-      max_lr_factor: 10.0
-      pct_start: 0.3
       div_factor: 25.0
       final_div_factor: 1e4
-
+      max_lr_factor: 10.0
+      pct_start: 0.3
+    type: OneCycleLR
+  seed: 42
   swa:
     enabled: true
-    start_epoch: 75
     lr: 0.001
-
+    start_epoch: 75
   warmup:
     enabled: true
-    max_steps: 1000
     initial_lr_factor: 0.01
-
-optimization:
-  n_trials: 50
-  early_stopping:
-    patience: 10
-    min_delta: 0.001
-  pruning:
-    warm_up_epochs: 3
-    deterioration_threshold: 0.3
-    min_trials_complete: 5
+    max_steps: 1000
