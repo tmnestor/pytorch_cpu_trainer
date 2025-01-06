@@ -87,7 +87,8 @@ training:
     optimization_level: 2
     use_bfloat16: true
   dataloader:
-    num_workers: 8
+    # Automatically adjust based on system capabilities
+    num_workers: auto  # Changed from 8 to auto
     persistent_workers: true
     pin_memory: true
     prefetch_factor: 2

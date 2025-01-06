@@ -689,11 +689,17 @@ def main():
     train_dataset = CustomDataset(train_df, config['data']['target_column'])
     val_dataset = CustomDataset(val_df, config['data']['target_column'])
     
+    # Get optimal number of workers based on system capabilities
+    optimal_workers = min(
+        config['training']['dataloader']['num_workers'],
+        max(1, psutil.cpu_count(logical=False) - 1)  # Leave one core for main process
+    )
+    
     train_loader = DataLoader(
         train_dataset,
         batch_size=config['training']['batch_size'],
         shuffle=True,
-        num_workers=config['training']['dataloader']['num_workers'],
+        num_workers=optimal_workers,  # Use calculated optimal workers
         pin_memory=config['training']['dataloader']['pin_memory'],
         persistent_workers=config['training']['dataloader']['persistent_workers'],
         prefetch_factor=config['training']['dataloader']['prefetch_factor'],
@@ -702,7 +708,11 @@ def main():
     val_loader = DataLoader(
         val_dataset,
         batch_size=config['training']['batch_size'],
-        shuffle=False
+        shuffle=False,
+        num_workers=optimal_workers,  # Apply same worker count to validation loader
+        pin_memory=config['training']['dataloader']['pin_memory'],
+        persistent_workers=config['training']['dataloader']['persistent_workers'],
+        prefetch_factor=config['training']['dataloader']['prefetch_factor']
     )
     
     # If best parameters don't exist in config, run hyperparameter tuning
