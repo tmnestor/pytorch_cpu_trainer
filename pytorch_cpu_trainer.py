@@ -110,18 +110,21 @@ class MLPClassifier(nn.Module):
         for hidden_size in hidden_layers:
             # Main layer
             self.layers.append(nn.Linear(prev_size, hidden_size))
+            
             # BatchNorm1d with fixed momentum for stable training
             if use_batch_norm:
                 self.norms.append(nn.BatchNorm1d(hidden_size, momentum=0.1))
             else:
                 self.norms.append(nn.Identity())  # No normalization
+                
             self.drops.append(nn.Dropout(dropout_rate))
-            # Residual connection if sizes match
+            
+            # Residual connection if sizes match, otherwise projection
             if prev_size == hidden_size:
-                self.residuals.append(True)
+                self.residuals.append(nn.Identity())
             else:
-                # Add projection for residual if sizes don't match
                 self.residuals.append(nn.Linear(prev_size, hidden_size))
+                
             prev_size = hidden_size
         
         self.final = nn.Linear(prev_size, num_classes)
@@ -133,19 +136,16 @@ class MLPClassifier(nn.Module):
             self.layers, self.norms, self.drops, self.residuals)):
             # Main branch
             x = layer(x)
-            x = norm(x)  # BatchNorm1d is stable with fixed batch sizes
+            x = norm(x)
             x = self.gelu(x)
             x = drop(x)
             
-            # Residual connection
-            if isinstance(residual, bool) and residual:
-                x = x + prev_x
-            elif isinstance(residual, nn.Module):
-                x = x + residual(prev_x)
+            # Add residual connection
+            x = x + residual(prev_x)
             prev_x = x
             
         return self.final(x)
-        
+
 class PyTorchTrainer:
     """A generic PyTorch trainer class.
     
