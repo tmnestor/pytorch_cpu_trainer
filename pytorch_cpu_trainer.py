@@ -367,8 +367,41 @@ class HyperparameterTuner:
 
 def restore_best_model(config):
     """Utility function to restore the best model and its optimizer."""
-    checkpoint = torch.load(config['model']['save_path'], weights_only=True)
+    checkpoint_path = config['model']['save_path']
     
+    # Check if checkpoint exists
+    if not os.path.exists(checkpoint_path):
+        print(f"No checkpoint found at {checkpoint_path}. Creating new model...")
+        # Create a new model with default parameters
+        model = MLPClassifier(
+            input_size=config['model']['input_size'],
+            hidden_layers=[256, 128, 64],  # Default architecture
+            num_classes=config['model']['num_classes'],
+            dropout_rate=0.2,
+            use_batch_norm=True
+        )
+        
+        optimizer = getattr(torch.optim, config['training']['optimizer_choice'])(
+            model.parameters(),
+            **config['training']['optimizer_params'][config['training']['optimizer_choice']]
+        )
+        
+        return {
+            'model': model,
+            'optimizer': optimizer,
+            'metric_name': config['training']['optimization_metric'],
+            'metric_value': 0.0,
+            'hyperparameters': {
+                'hidden_layers': [256, 128, 64],
+                'dropout_rate': 0.2,
+                'lr': config['training']['optimizer_params'][config['training']['optimizer_choice']]['lr'],
+                'use_batch_norm': True,
+                'weight_decay': 0.0
+            }
+        }
+
+    # Load existing checkpoint
+    checkpoint = torch.load(checkpoint_path)
     # Create model with saved hyperparameters
     model = MLPClassifier(
         input_size=config['model']['input_size'],
@@ -553,6 +586,9 @@ class CPUOptimizer:
 def main():
     config_path = 'config.yaml'
     config = load_config(config_path)
+    
+    # Create necessary directories
+    os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
     
     # Set up logging
     setup_logger()
