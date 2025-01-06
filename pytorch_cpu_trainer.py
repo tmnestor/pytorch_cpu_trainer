@@ -957,7 +957,59 @@ def main():
         model = restored['model']
         optimizer = restored['optimizer']
         
-        # ... rest of your existing training code ...
+        # Create criterion with label smoothing if enabled
+        if config['training'].get('label_smoothing', {}).get('enabled', False):
+            criterion = LabelSmoothingLoss(
+                num_classes=config['model']['num_classes'],
+                smoothing=config['training']['label_smoothing']['factor']
+            )
+        else:
+            criterion = getattr(nn, config['training']['loss_function'])()
+            
+        # Configure scheduler
+        scheduler_params = config['training']['scheduler']['params'].copy()
+        max_lr = float(config['training']['optimizer_params']['Adam']['lr']) * \
+                 float(scheduler_params.pop('max_lr_factor', 10.0))
+                 
+        # Create scheduler
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=max_lr,
+            epochs=config['training']['epochs'],
+            steps_per_epoch=len(train_loader),
+            pct_start=float(scheduler_params.get('pct_start', 0.3)),
+            div_factor=float(scheduler_params.get('div_factor', 25.0)),
+            final_div_factor=float(scheduler_params.get('final_div_factor', 1e4))
+        )
         
+        # Create trainer
+        trainer = PyTorchTrainer(
+            model=model,
+            criterion=criterion,
+            optimizer=optimizer,
+            device=config['training']['device'],
+            verbose=True,
+            scheduler=scheduler,
+            config=config
+        )
+        
+        # Train the model
+        logger.info("Starting model training...")
+        train_losses, val_losses, train_metrics, val_metrics, best_val_metric = trainer.train(
+            train_loader,
+            val_loader,
+            config['training']['epochs'],
+            metric=config['training']['optimization_metric']
+        )
+        
+        logger.info(f"Training completed. Best validation {config['training']['optimization_metric']}: {best_val_metric:.4f}")
+        
+        # Final evaluation
+        val_loss, val_accuracy, val_f1 = trainer.evaluate(val_loader)
+        logger.info("\nFinal Model Performance:")
+        logger.info(f"Validation Loss: {val_loss:.4f}")
+        logger.info(f"Validation Accuracy: {val_accuracy * 100:.2f}%")
+        logger.info(f"Validation F1-Score: {val_f1 * 100:.2f}%")
+
 if __name__ == "__main__":
     main()
