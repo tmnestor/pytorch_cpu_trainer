@@ -125,7 +125,7 @@ class MLPClassifier(nn.Module):
         self.final = nn.Linear(prev_size, num_classes)
         self.gelu = nn.GELU()
         
-    def forward(self, xdelete):
+    def forward(self, x):  # Fix parameter name from 'xdelete' to 'x'
         prev_x = x
         for i, (layer, norm, drop, residual) in enumerate(zip(
             self.layers, self.norms, self.drops, self.residuals)):
