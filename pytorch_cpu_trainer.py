@@ -286,7 +286,6 @@ class PyTorchTrainer:
         
         with torch.no_grad():
             for batch_X, batch_y in val_loader:
-                # Remove channels_last format here too
                 batch_X = batch_X.to(self.device)
                 batch_y = batch_y.to(self.device)
                 outputs = self.model(batch_X)
@@ -296,19 +295,19 @@ class PyTorchTrainer:
                 total += batch_y.size(0)
                 correct += (predicted == batch_y).sum().item()
                 
+                # Store predictions and labels for F1 score calculation
                 all_preds.extend(predicted.cpu().numpy())
                 all_labels.extend(batch_y.cpu().numpy())
         
         try:
-            # Convert accuracy to decimal for consistency with F1
             accuracy = correct / total if total > 0 else 0.0
-            f1 = f1_score(all_labels, all_preds, average='weighted') if total > 0 else 0.0
+            f1 = f1_score(all_labels, all_preds, average='weighted') if len(all_preds) > 0 else 0.0
         except Exception as e:
             self.logger.error(f"Error calculating metrics: {str(e)}")
             accuracy = 0.0
             f1 = 0.0
         
-        return (total_loss / len(val_loader)), accuracy, f1
+        return total_loss / len(val_loader), accuracy, f1
 
     def train(self, train_loader, val_loader, epochs, metric='accuracy'):
         """Trains the model for specified number of epochs. 
@@ -981,7 +980,7 @@ def main():
         f"Validation F1-Score: {val_f1 * 100:.2f}%\n"
         f"\nBest Model Metrics:\n"
         f"Best {metric_name.upper()}: {best_saved_metric * 100:.2f}%\n"
-        f"Current {metric_name.upper()}: {current_metric * 100:.2f}%"
+        f"Current {metric_name.upper()}: {val_f1 * 100:.2f}%"  # Changed from current_metric to val_f1
     )
 
 if __name__ == "__main__":
