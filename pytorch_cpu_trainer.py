@@ -30,24 +30,41 @@ def load_config(config_path):
         return yaml.safe_load(f)
         
 # Set up logging
-def setup_logger(name='MLPTrainer'):
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
+def setup_logger(config, name='MLPTrainer'):
+    """Set up logging with both file and console handlers."""
+    # Create logging directory if it doesn't exist
+    log_dir = config['logging']['directory']
+    os.makedirs(log_dir, exist_ok=True)
     
-    # File handler
-    fh = logging.FileHandler(f'{name}.log')
-    fh.setLevel(logging.INFO)
+    # Get the logger
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)  # Set to DEBUG to catch all levels
+    
+    # Clear any existing handlers
+    logger.handlers = []
+    
+    # File handler - use component specific config if available
+    if name.lower() in config['logging']['handlers']:
+        handler_config = config['logging']['handlers'][name.lower()]
+        log_path = os.path.join(log_dir, handler_config['filename'])
+        fh = logging.FileHandler(log_path)
+        fh.setLevel(getattr(logging, handler_config['level']))
+    else:
+        # Default file handler
+        log_path = os.path.join(log_dir, f'{name}.log')
+        fh = logging.FileHandler(log_path)
+        fh.setLevel(getattr(logging, config['logging']['file_level']))
     
     # Console handler
     ch = logging.StreamHandler(sys.stdout)
-    ch.setLevel(logging.INFO)
+    ch.setLevel(getattr(logging, config['logging']['console_level']))
     
     # Formatter
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     fh.setFormatter(formatter)
     ch.setFormatter(formatter)
     
-    # Add handlers to logger
+    # Add handlers
     logger.addHandler(fh)
     logger.addHandler(ch)
     
@@ -253,6 +270,7 @@ class HyperparameterTuner:
         self.best_model_state = None
         self.best_optimizer_state = None
         self.best_params = None
+        self.logger = setup_logger(config, 'hyperparameter_tuning')
         os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
     
     def save_best_model(self, model, optimizer, trial_value, params):
@@ -370,6 +388,7 @@ class HyperparameterTuner:
         return best_metric
     
     def tune(self, train_loader, val_loader):
+        self.logger.info("Starting hyperparameter tuning...")
         study = optuna.create_study(
             direction="maximize",
             pruner=optuna.pruners.MedianPruner()
@@ -520,7 +539,7 @@ class CPUOptimizer:
     def __init__(self, config, model=None):
         self.config = config
         self.model = model
-        self.logger = logging.getLogger('CPUOptimizer')
+        self.logger = None  # Will be set in main()
         self.cpu_info = cpuinfo.get_cpu_info()
         
     def detect_cpu_features(self):
@@ -609,16 +628,20 @@ def main():
     
     # Create necessary directories
     os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
+    os.makedirs(config['logging']['directory'], exist_ok=True)
     
-    # Initialize CPU optimization and configure threads before any PyTorch operations
+    # Set up main logger first
+    logger = setup_logger(config, 'MLPTrainer')
+    logger.info("Starting training process...")
+    
+    # Initialize CPU optimization with its own logger
     cpu_optimizer = CPUOptimizer(config)
+    cpu_optimizer.logger = setup_logger(config, 'cpu_optimization')
     cpu_optimizer.configure_thread_settings()
-    
-    # Set up logging
-    setup_logger()
     
     # Set seed for reproducibility
     set_seed(config['training']['seed'])
+    logger.info(f"Set random seed to {config['training']['seed']}")
     
     # Continue with the rest of initialization
     optimizations = cpu_optimizer.configure_optimizations()
