@@ -690,10 +690,15 @@ def main():
     val_dataset = CustomDataset(val_df, config['data']['target_column'])
     
     # Get optimal number of workers based on system capabilities
-    optimal_workers = min(
-        config['training']['dataloader']['num_workers'],
-        max(1, psutil.cpu_count(logical=False) - 1)  # Leave one core for main process
-    )
+    if config['training']['dataloader']['num_workers'] == 'auto':
+        optimal_workers = max(1, min(
+            psutil.cpu_count(logical(False)) - 1,  # Leave one core for main process
+            6  # Maximum suggested workers
+        ))
+    else:
+        optimal_workers = int(config['training']['dataloader']['num_workers'])
+    
+    logger.info(f"Using {optimal_workers} workers for data loading")
     
     train_loader = DataLoader(
         train_dataset,
