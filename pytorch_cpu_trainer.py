@@ -887,7 +887,17 @@ def main():
     # Load configuration
     config = load_config(args.config)
     
-    # Update default configuration with historical best performers
+    # Create necessary directories first
+    os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
+    os.makedirs(config['logging']['directory'], exist_ok=True)
+    os.makedirs('input_data', exist_ok=True)
+    os.makedirs('figures', exist_ok=True)
+    
+    # Set up main logger BEFORE using it
+    logger = setup_logger(config, 'MLPTrainer')
+    logger.info(f"Starting in {args.mode} mode...")
+    
+    # Now we can use logger for update_default_config
     logger.info("Checking for historical best configurations")
     update_default_config(args.config)
     
@@ -895,16 +905,6 @@ def main():
     config = load_config(args.config)
     logger.info("Configuration loaded with defaults:" + 
                 f"\ndefault_model: {config.get('default_model', 'Not found')}")
-    
-    # Create necessary directories first
-    os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
-    os.makedirs(config['logging']['directory'], exist_ok=True)
-    os.makedirs('input_data', exist_ok=True)
-    os.makedirs('figures', exist_ok=True)  # Add figures directory creation
-    
-    # Set up main logger
-    logger = setup_logger(config, 'MLPTrainer')
-    logger.info(f"Starting in {args.mode} mode...")
     
     # Initialize CPU optimization early
     cpu_optimizer = CPUOptimizer(config)
