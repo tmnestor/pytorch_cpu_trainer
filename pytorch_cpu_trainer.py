@@ -72,12 +72,23 @@ def setup_logger(config, name='MLPTrainer'):
 
 class CustomDataset(Dataset):
     def __init__(self, df, target_column, batch_size=1000):
+        if df is None or df.empty:
+            raise ValueError("Empty dataframe provided")
+            
+        if target_column not in df.columns:
+            raise ValueError(f"Target column '{target_column}' not found")
+            
         self.df = df
         self.target_column = target_column
         self.batch_size = batch_size
+        
         # Pre-process all data at init for better performance
         self.features = torch.FloatTensor(df.drop(target_column, axis=1).values)
         self.labels = torch.LongTensor(df[target_column].values)
+        
+        # Verify tensors are created successfully
+        if self.features.nelement() == 0 or self.labels.nelement() == 0:
+            raise ValueError("Failed to create data tensors")
         
     def __len__(self):
         return len(self.df)
@@ -717,35 +728,53 @@ def main():
     # Continue with the rest of initialization
     optimizations = cpu_optimizer.configure_optimizations()
     
-    # Create datasets and dataloaders
-    train_df = pd.read_csv(config['data']['train_path'])
-    val_df = pd.read_csv(config['data']['val_path'])
-    train_dataset = CustomDataset(train_df, config['data']['target_column'])
-    val_dataset = CustomDataset(val_df, config['data']['target_column'])
-    
-    # Get optimal number of workers based on system capabilities
-    if config['training']['dataloader']['num_workers'] == 'auto':
-        optimal_workers = max(1, min(
-            psutil.cpu_count(logical=False) - 1,  # Leave one core for main process
-            6  # Maximum suggested workers
-        ))
-    else:
-        optimal_workers = int(config['training']['dataloader']['num_workers'])
-    
-    logger.info(f"Using {optimal_workers} workers for data loading")
-    
-    # Enhanced DataLoader configuration
-    dataloader_args = {
-        'batch_size': config['training']['batch_size'] * config['training']['performance']['batch_size_multiplier'],
-        'num_workers': optimal_workers,
-        'pin_memory': config['training']['dataloader']['pin_memory'],
-        'persistent_workers': config['training']['dataloader']['persistent_workers'],
-        'prefetch_factor': config['training']['dataloader']['prefetch_factor'],
-        'drop_last': config['training']['drop_last']
-    }
-    
-    train_loader = DataLoader(train_dataset, shuffle=True, **dataloader_args)
-    val_loader = DataLoader(val_dataset, shuffle=False, **dataloader_args)
+    # Create datasets and dataloaders with validation
+    try:
+        train_df = pd.read_csv(config['data']['train_path'])
+        val_df = pd.read_csv(config['data']['val_path'])
+        
+        # Verify data is not empty
+        if train_df.empty or val_df.empty:
+            raise ValueError("Empty dataset detected")
+            
+        logger.info(f"Loaded training data: {train_df.shape}, validation data: {val_df.shape}")
+        
+        # Verify target column exists
+        target_column = config['data']['target_column']
+        if target_column not in train_df.columns or target_column not in val_df.columns:
+            raise ValueError(f"Target column '{target_column}' not found in data")
+        
+        train_dataset = CustomDataset(train_df, target_column)
+        val_dataset = CustomDataset(val_df, target_column)
+        
+        # Verify datasets are not empty
+        if len(train_dataset) == 0 or len(val_dataset) == 0:
+            raise ValueError("Empty dataset after preprocessing")
+            
+        logger.info(f"Created datasets - train: {len(train_dataset)}, val: {len(val_dataset)}")
+        
+        # Enhanced DataLoader configuration with validation
+        dataloader_args = {
+            'batch_size': config['training']['batch_size'] * config['training']['performance']['batch_size_multiplier'],
+            'num_workers': optimal_workers,
+            'pin_memory': config['training']['dataloader']['pin_memory'],
+            'persistent_workers': config['training']['dataloader']['persistent_workers'],
+            'prefetch_factor': config['training']['dataloader']['prefetch_factor'],
+            'drop_last': config['training']['drop_last']
+        }
+        
+        train_loader = DataLoader(train_dataset, shuffle=True, **dataloader_args)
+        val_loader = DataLoader(val_dataset, shuffle=False, **dataloader_args)
+        
+        # Verify loaders are properly initialized
+        if len(train_loader) == 0 or len(val_loader) == 0:
+            raise ValueError("Empty data loader detected")
+            
+        logger.info(f"Created data loaders - train batches: {len(train_loader)}, val batches: {len(val_loader)}")
+        
+    except Exception as e:
+        logger.error(f"Data loading failed: {str(e)}")
+        raise
     
     # If best parameters don't exist in config, run hyperparameter tuning
     if 'best_model' not in config:
