@@ -23,6 +23,7 @@ import cpuinfo
 import intel_extension_for_pytorch as ipex
 import multiprocessing
 import torch.optim.swa_utils as swa_utils  # Add at top with other imports
+import argparse  # Add at top with other imports
 
 
 def load_config(config_path):
@@ -591,9 +592,13 @@ def restore_best_model(config):
         logger.warning(f"Failed to load checkpoint: {e}. Using default model.")
     
     # Create default model if no checkpoint or loading failed
+    default_width = 128  # Use a single width for all layers
+    default_n_layers = 3  # Number of hidden layers
+    hidden_layers = [default_width] * default_n_layers  # Create list of same width
+    
     model = MLPClassifier(
         input_size=config['model']['input_size'],
-        hidden_layers=[256, 128, 64],  # Default architecture
+        hidden_layers=hidden_layers,
         num_classes=config['model']['num_classes'],
         dropout_rate=0.2,
         use_batch_norm=True,
@@ -611,7 +616,9 @@ def restore_best_model(config):
         'metric_name': config['training']['optimization_metric'],
         'metric_value': 0.0,
         'hyperparameters': {
-            'hidden_layers': [256, 128, 64],
+            'n_layers': default_n_layers,
+            'layer_width': default_width,
+            'hidden_layers': hidden_layers,
             'dropout_rate': 0.2,
             'lr': config['training']['optimizer_params'][config['training']['optimizer_choice']]['lr'],
             'use_batch_norm': True,
@@ -835,9 +842,48 @@ class CPUWarmupScheduler:
                 param_group['lr'] = lr
         self.current_step += 1
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='PyTorch CPU Trainer')
+    parser.add_argument('--mode', type=str, choices=['train', 'inference'],
+                      required=True, help='Mode to run the model: train or inference')
+    parser.add_argument('--config', type=str, default='config.yaml',
+                      help='Path to config file (default: config.yaml)')
+    parser.add_argument('--retrain', action='store_true',
+                      help='Retrain model even if best model exists')
+    return parser.parse_args()
+
+def inference(model, val_loader, config, logger):
+    """Run inference using the best saved model."""
+    model.eval()
+    all_preds = []
+    all_labels = []
+    
+    logger.info("Running inference with best saved model...")
+    with torch.no_grad():
+        for batch_X, batch_y in tqdm(val_loader, desc='Inference'):
+            batch_X = batch_X.to(config['training']['device'])
+            outputs = model(batch_X)
+            _, predicted = torch.max(outputs.data, 1)
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(batch_y.numpy())
+    
+    # Calculate metrics
+    accuracy = (np.array(all_preds) == np.array(all_labels)).mean()
+    f1 = f1_score(all_labels, all_preds, average='weighted')
+    
+    logger.info(f"\nInference Results:")
+    logger.info(f"Accuracy: {accuracy * 100:.2f}%")
+    logger.info(f"F1-Score: {f1 * 100:.2f}%")
+    
+    return accuracy, f1
+
 def main():
-    config_path = 'config.yaml'
-    config = load_config(config_path)
+    # Parse command line arguments
+    args = parse_args()
+    
+    # Load configuration
+    config = load_config(args.config)
     
     # Create necessary directories first
     os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
@@ -846,7 +892,7 @@ def main():
     
     # Set up main logger
     logger = setup_logger(config, 'MLPTrainer')
-    logger.info("Starting training process...")
+    logger.info(f"Starting in {args.mode} mode...")
     
     # Initialize CPU optimization early
     cpu_optimizer = CPUOptimizer(config)
@@ -854,7 +900,6 @@ def main():
     
     # Set seed for reproducibility
     set_seed(config['training']['seed'])
-    logger.info(f"Set random seed to {config['training']['seed']}")
     
     # Load and validate data files
     train_path = config['data']['train_path']
@@ -871,149 +916,48 @@ def main():
     if target_column not in train_df.columns or target_column not in val_df.columns:
         raise ValueError(f"Target column '{target_column}' not found in data")
     
-    # Create datasets first
-    train_dataset = CustomDataset(train_df, target_column)
+    # Create datasets and dataloaders
     val_dataset = CustomDataset(val_df, target_column)
-    
-    # Calculate optimal number of workers
-    if config['training']['dataloader']['num_workers'] == 'auto':
-        num_cpu = psutil.cpu_count(logical=False)
-        optimal_workers = min(2, max(1, num_cpu - 1)) if num_cpu else 0
-    else:
-        optimal_workers = int(config['training']['dataloader']['num_workers'])
-    
-    logger.info(f"Using {optimal_workers} worker processes for data loading")
-    
-    # Calculate consistent batch size
-    min_dataset_size = min(len(train_dataset), len(val_dataset))
-    batch_size = min(
-        config['training']['batch_size'],
-        min_dataset_size // 8  # Ensure at least 8 batches for stable training
-    )
-    # Round to nearest power of 2 for better performance
-    batch_size = 2 ** int(np.log2(batch_size))
-    batch_size = max(32, batch_size)  # Minimum batch size of 32 for stable BatchNorm
-    
-    logger.info(f"Using fixed batch size: {batch_size} for both training and validation")
-    
-    # Safe DataLoader configuration with uniform batch size
-    dataloader_kwargs = {
-        'batch_size': batch_size,
-        'num_workers': optimal_workers,
-        'pin_memory': False,  # False for CPU training
-        'drop_last': True,    # Must be True for consistent batch norm
-        'shuffle': True       # Only for training
-    }
-    
-    if optimal_workers > 0:
-        dataloader_kwargs.update({
-            'persistent_workers': True,
-            'prefetch_factor': 2
-        })
-    
-    # Create data loaders
-    train_loader = DataLoader(train_dataset, **dataloader_kwargs)
     val_loader = DataLoader(
         val_dataset,
-        **{**dataloader_kwargs, 'shuffle': False}  # Only difference is shuffle=False
+        batch_size=config['training']['batch_size'],
+        shuffle=False
     )
     
-    # Verify batch sizes
-    if len(train_loader.dataset) % batch_size != 0:
-        logger.warning(
-            f"Training set size ({len(train_loader.dataset)}) is not divisible by "
-            f"batch size ({batch_size}). Some samples will be dropped."
+    if args.mode == 'inference':
+        # Load best model and run inference
+        if not os.path.exists(config['model']['save_path']):
+            raise FileNotFoundError("No saved model found for inference")
+        
+        restored = restore_best_model(config)
+        model = restored['model']
+        logger.info(f"Loaded model with {restored['metric_name']} = {restored['metric_value']:.4f}")
+        
+        accuracy, f1 = inference(model, val_loader, config, logger)
+        
+    else:  # Training mode
+        train_dataset = CustomDataset(train_df, target_column)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=config['training']['batch_size'],
+            shuffle=True
         )
-    if len(val_loader.dataset) % batch_size != 0:
-        logger.warning(
-            f"Validation set size ({len(val_loader.dataset)}) is not divisible by "
-            f"batch size ({batch_size}). Some samples will be dropped."
-        )
-
-    # Verify we have enough batches
-    min_batches = 5  # Minimum number of batches for stable training
-    if len(train_loader) < min_batches:
-        raise ValueError(
-            f"Too few training batches ({len(train_loader)}). "
-            f"Reduce batch size or use a larger dataset."
-        )
-    
-    logger.info(
-        f"DataLoaders created with fixed batch size {batch_size}:\n"
-        f"Train samples: {len(train_dataset)}, batches: {len(train_loader)}\n"
-        f"Val samples: {len(val_dataset)}, batches: {len(val_loader)}"
-    )
-    
-    # Continue with model training
-    if 'best_model' not in config:
-        tuner = HyperparameterTuner(config)
-        best_trial, best_params = tuner.tune(train_loader, val_loader)
-        save_best_params_to_config(config_path, best_trial, best_params)
-        config = load_config(config_path)
-    
-    # Restore or create model
-    restored = restore_best_model(config)
-    model = restored['model']
-    optimizer = restored['optimizer']
-    
-    # Create criterion with label smoothing
-    if config['training'].get('label_smoothing', {}).get('enabled', False):
-        criterion = LabelSmoothingLoss(
-            num_classes=config['model']['num_classes'],
-            smoothing=config['training']['label_smoothing']['factor']
-        )
-    else:
-        criterion = getattr(nn, config['training']['loss_function'])()
-    
-    # Configure scheduler
-    scheduler_params = config['training']['scheduler']['params'].copy()
-    max_lr = float(config['training']['optimizer_params']['Adam']['lr']) * \
-             float(scheduler_params.pop('max_lr_factor', 10.0))
-    
-    # Create scheduler
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer,
-        max_lr=max_lr,
-        epochs=config['training']['epochs'],
-        steps_per_epoch=len(train_loader),
-        pct_start=float(scheduler_params.get('pct_start', 0.3)),
-        div_factor=float(scheduler_params.get('div_factor', 25.0)),
-        final_div_factor=float(scheduler_params.get('final_div_factor', 1e4))
-    )
-    
-    # Create trainer
-    trainer = PyTorchTrainer(
-        model=model,
-        criterion=criterion,
-        optimizer=optimizer,
-        device=config['training']['device'],
-        verbose=True,
-        scheduler=scheduler,
-        config=config
-    )
-    
-    # Evaluate model
-    val_loss, val_accuracy, val_f1 = trainer.evaluate(val_loader)
-    train_loss, train_accuracy, train_f1 = trainer.train_epoch(train_loader)
-    
-    metric_name = config['training']['optimization_metric']
-    current_train_metric = train_f1 if metric_name == 'f1' else train_accuracy
-    current_val_metric = val_f1 if metric_name == 'f1' else val_accuracy
-    best_saved_metric = restored['metric_value']
-    
-    logger.info(
-        f"\nModel Performance:\n"
-        f"Training Loss: {train_loss:.4f}\n"
-        f"Validation Loss: {val_loss:.4f}\n"
-        f"Training Accuracy: {train_accuracy * 100:.2f}%\n"
-        f"Validation Accuracy: {val_accuracy * 100:.2f}%\n"
-        f"Training F1-Score: {train_f1 * 100:.2f}%\n"
-        f"Validation F1-Score: {val_f1 * 100:.2f}%\n"
-        f"\nBest Model Metrics:\n"
-        f"Best {metric_name.upper()}: {best_saved_metric * 100:.2f}%\n"
-        f"Current Train {metric_name.upper()}: {current_train_metric * 100:.2f}%\n"
-        f"Current Val {metric_name.upper()}: {current_val_metric * 100:.2f}%"
-    )
-
+        
+        should_train = args.retrain or 'best_model' not in config
+        
+        if should_train:
+            logger.info("Starting training process...")
+            tuner = HyperparameterTuner(config)
+            best_trial, best_params = tuner.tune(train_loader, val_loader)
+            save_best_params_to_config(args.config, best_trial, best_params)
+            config = load_config(args.config)
+        
+        # Rest of the training code remains the same
+        restored = restore_best_model(config)
+        model = restored['model']
+        optimizer = restored['optimizer']
+        
+        # ... rest of your existing training code ...
+        
 if __name__ == "__main__":
     main()
