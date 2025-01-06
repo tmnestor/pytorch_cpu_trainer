@@ -1,13 +1,15 @@
 best_model:
   best_metric_name: f1_score
-  best_metric_value: 0.4
-  dropout_rate: 0.10348616644864256
+  best_metric_value: 0.3411764705882353
+  dropout_rate: 0.3279653036315585
   hidden_layers:
-  - 392
-  - 392
-  layer_width: 392
-  learning_rate: 0.053022634015899274
-  n_layers: 2
+  - 250
+  - 250
+  - 250
+  - 250
+  layer_width: 250
+  learning_rate: 0.016701412109387716
+  n_layers: 4
   use_batch_norm: true
   weight_decay: 0.0
 data:

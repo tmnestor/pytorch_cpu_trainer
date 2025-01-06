@@ -335,6 +335,9 @@ class PyTorchTrainer:
 
     def plot_learning_curves(self, train_losses, val_losses, train_metrics, val_metrics, metric_name='Accuracy'):
         """Plots the learning curves for loss and chosen metric (accuracy or F1)."""
+        # Create figures directory if it doesn't exist
+        os.makedirs('figures', exist_ok=True)
+        
         plt.figure(figsize=(12, 5))
         
         # Create subplots
@@ -360,9 +363,9 @@ class PyTorchTrainer:
         ax2.legend()
         ax2.grid(True)
         
-        # Adjust layout and save
+        # Adjust layout and save in figures directory
         plt.tight_layout()
-        plt.savefig('learning_curves.png')
+        plt.savefig(os.path.join('figures', 'learning_curves.png'))
         plt.close()
 
     def train(self, train_loader, val_loader, epochs, metric='accuracy'):
@@ -904,6 +907,7 @@ def main():
     os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
     os.makedirs(config['logging']['directory'], exist_ok=True)
     os.makedirs('input_data', exist_ok=True)
+    os.makedirs('figures', exist_ok=True)  # Add figures directory creation
     
     # Set up main logger
     logger = setup_logger(config, 'MLPTrainer')
