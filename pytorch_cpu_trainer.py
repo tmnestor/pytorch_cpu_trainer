@@ -125,29 +125,32 @@ class PyTorchTrainer:
         total_loss = 0
         correct = 0
         total = 0
+        
         for batch_X, batch_y in train_loader:
-            batch_X = batch_X.to(self.device, memory_format=torch.channels_last)
+            batch_X = batch_X.to(self.device)
             batch_y = batch_y.to(self.device)
+            
+            self.optimizer.zero_grad()  # Clear gradients
             
             with torch.autocast(device_type='cpu', dtype=torch.bfloat16):
                 outputs = self.model(batch_X)
                 loss = self.criterion(outputs, batch_y)
             
-            self.scaler.scale(loss).backward()
-            self.scaler.unscale_(self.optimizer)
+            loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_val)
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
+            self.optimizer.step()
             
-            # Explicit memory cleanup
-            del outputs
-            torch.cuda.empty_cache() if torch.cuda.is_available() else gc.collect()
+            if self.scheduler is not None:
+                self.scheduler.step()
             
+            # Memory cleanup
             total_loss += loss.item()
-            # Save the best model and optimizer from hyperparameter tuning. Reload this best model after hyperparameter tuning. apply the reloaded model to the validation dataset as the final step, to compare its performance with the results of the train_final_model step.
             _, predicted = torch.max(outputs.data, 1)
             total += batch_y.size(0)
             correct += (predicted == batch_y).sum().item()
+            
+            del outputs, loss
+            torch.cuda.empty_cache() if torch.cuda.is_available() else gc.collect()
         
         accuracy = 100 * correct / total
         return total_loss / len(train_loader), accuracy
@@ -163,7 +166,9 @@ class PyTorchTrainer:
         
         with torch.no_grad():
             for batch_X, batch_y in val_loader:
-                batch_X, batch_y = batch_X.to(self.device), batch_y.to(self.device)
+                # Remove channels_last format here too
+                batch_X = batch_X.to(self.device)
+                batch_y = batch_y.to(self.device)
                 outputs = self.model(batch_X)
                 loss = self.criterion(outputs, batch_y)
                 total_loss += loss.item()
@@ -297,59 +302,65 @@ class HyperparameterTuner:
         return model, optimizer, trial_params
     
     def objective(self, trial, train_loader, val_loader):
+        """Optimization objective for hyperparameter tuning."""
         model, optimizer, trial_params = self.create_model_and_optimizer(trial)
         criterion = getattr(nn, self.config['training']['loss_function'])()
         
+        # Create trainer with minimal components for tuning
         trainer = PyTorchTrainer(
-            model, criterion, optimizer,
+            model=model,
+            criterion=criterion,
+            optimizer=optimizer,
             device=self.config['training']['device']
         )
         
-        patience = self.config['optimization']['early_stopping']['patience']
-        min_delta = self.config['optimization']['early_stopping']['min_delta']
         best_metric = float('-inf')
         patience_counter = 0
-        last_metric = float('-inf')
-        
-        # Add warm-up period
-        warm_up_epochs = 3
         running_metrics = []
         
-        for epoch in range(self.config['training']['epochs']):
-            trainer.train_epoch(train_loader)
-            _, accuracy, f1 = trainer.evaluate(val_loader)
-            
-            metric = f1 if self.config['training']['optimization_metric'] == 'f1' else accuracy
-            trial.report(metric, epoch)
-            
-            running_metrics.append(metric)
-            if len(running_metrics) > 3:
-                running_metrics.pop(0)
-            
-            # Early stopping logic
-            if metric > best_metric + min_delta:
-                best_metric = metric
-                patience_counter = 0
+        try:
+            for epoch in range(self.config['training']['epochs']):
+                # Training step
+                trainer.train_epoch(train_loader)
+                # Evaluation step
+                _, accuracy, f1 = trainer.evaluate(val_loader)
                 
-                if metric > self.best_trial_value:
-                    self.best_trial_value = metric
-                    self.save_best_model(model, optimizer, metric, trial_params)
-            else:
-                patience_counter += 1
-            
-            # Modified pruning logic with warm-up and relative threshold
-            if epoch >= warm_up_epochs:
-                avg_metric = sum(running_metrics) / len(running_metrics)
-                relative_deterioration = (best_metric - avg_metric) / (best_metric + 1e-8)
+                # Get appropriate metric
+                metric = f1 if self.config['training']['optimization_metric'] == 'f1' else accuracy
+                trial.report(metric, epoch)
                 
-                if relative_deterioration > 0.3:  # 30% deterioration threshold
-                    raise optuna.TrialPruned("Trial pruned due to significant metric deterioration")
+                # Update running metrics
+                running_metrics.append(metric)
+                if len(running_metrics) > 3:
+                    running_metrics.pop(0)
+                
+                # Early stopping check
+                if metric > best_metric + self.config['optimization']['early_stopping']['min_delta']:
+                    best_metric = metric
+                    patience_counter = 0
+                    if metric > self.best_trial_value:
+                        self.best_trial_value = metric
+                        self.save_best_model(model, optimizer, metric, trial_params)
+                else:
+                    patience_counter += 1
+                
+                # Pruning check
+                if epoch >= self.config['optimization']['pruning']['warm_up_epochs']:
+                    avg_metric = sum(running_metrics) / len(running_metrics)
+                    if (best_metric - avg_metric) / best_metric > self.config['optimization']['pruning']['deterioration_threshold']:
+                        raise optuna.TrialPruned()
+                
+                if patience_counter >= self.config['optimization']['early_stopping']['patience']:
+                    break
+                
+                if trial.should_prune():
+                    raise optuna.TrialPruned()
+                    
+        except Exception as e:
+            if not isinstance(e, optuna.TrialPruned):
+                print(f"Trial failed with error: {str(e)}")
+            raise
             
-            last_metric = metric
-            
-            if patience_counter >= patience:
-                break
-        
         return best_metric
     
     def tune(self, train_loader, val_loader):
