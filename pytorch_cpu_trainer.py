@@ -335,44 +335,55 @@ class PyTorchTrainer:
 
     def plot_learning_curves(self, train_losses, val_losses, train_metrics, val_metrics, metric_name='Accuracy'):
         """Plots the learning curves for loss and chosen metric (accuracy or F1)."""
-        plt.figure(figsize=(10, 6))
-        sns.set_style("whitegrid")
+        plt.figure(figsize=(12, 5))
         
-        # Normalize values for better visualization
-        max_loss = max(max(train_losses), max(val_losses)) if train_losses and val_losses else 1
-        max_metric = max(max(train_metrics), max(val_metrics)) if train_metrics and val_metrics else 1
+        # Create subplots
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
         
         epochs = range(1, len(train_losses) + 1)
         
-        plt.plot(epochs, [x/max_metric for x in train_metrics], label=f'Training {metric_name}')
-        plt.plot(epochs, [x/max_metric for x in val_metrics], label=f'Validation {metric_name}')
-        plt.plot(epochs, [x/max_loss for x in train_losses], label='Training Loss')
-        plt.plot(epochs, [x/max_loss for x in val_losses], label='Validation Loss')
+        # Plot losses
+        ax1.plot(epochs, train_losses, 'b-', label='Training Loss')
+        ax1.plot(epochs, val_losses, 'r-', label='Validation Loss')
+        ax1.set_title('Training and Validation Loss')
+        ax1.set_xlabel('Epoch')
+        ax1.set_ylabel('Loss')
+        ax1.legend()
+        ax1.grid(True)
         
-        plt.xlabel("Epoch")
-        plt.ylabel("Normalized Value")
-        plt.title(f"Training and Validation Loss and {metric_name} Curves")
-        plt.legend()
+        # Plot metrics
+        ax2.plot(epochs, train_metrics, 'b-', label=f'Training {metric_name}')
+        ax2.plot(epochs, val_metrics, 'r-', label=f'Validation {metric_name}')
+        ax2.set_title(f'Training and Validation {metric_name}')
+        ax2.set_xlabel('Epoch')
+        ax2.set_ylabel(metric_name)
+        ax2.legend()
+        ax2.grid(True)
+        
+        # Adjust layout and save
+        plt.tight_layout()
         plt.savefig('learning_curves.png')
         plt.close()
 
     def train(self, train_loader, val_loader, epochs, metric='accuracy'):
-        """Trains the model for specified number of epochs. 
-        Monitors specified validation metric for early stopping."""
+        """Trains the model for specified number of epochs."""
         train_losses, val_losses = [], []
         train_metrics, val_metrics = [], []
-        best_val_metric = 0
+        best_val_metric = float('-inf')
         
         for epoch in tqdm(range(epochs), desc='Training'):
-            if epoch < self.warmup_scheduler.warmup_steps:
+            # Warmup and SWA handling
+            if hasattr(self, 'warmup_scheduler') and self.warmup_scheduler and epoch < self.warmup_scheduler.warmup_steps:
                 self.warmup_scheduler.step()
-            elif epoch >= self.swa_start and self.swa_model is not None:
+            elif hasattr(self, 'swa_model') and self.swa_model is not None and epoch >= getattr(self, 'swa_start', float('inf')):
                 self.swa_model.update_parameters(self.model)
-                self.swa_scheduler.step()
+                if hasattr(self, 'swa_scheduler'):
+                    self.swa_scheduler.step()
             else:
                 if self.scheduler is not None:
                     self.scheduler.step()
             
+            # Training and evaluation
             train_loss, train_accuracy, train_f1 = self.train_epoch(train_loader)
             val_loss, val_accuracy, val_f1 = self.evaluate(val_loader)
             
@@ -380,6 +391,7 @@ class PyTorchTrainer:
             train_metric = train_f1 if metric == 'f1' else train_accuracy
             val_metric = val_f1 if metric == 'f1' else val_accuracy
             
+            # Store metrics
             train_losses.append(train_loss)
             val_losses.append(val_loss)
             train_metrics.append(train_metric)
@@ -389,13 +401,19 @@ class PyTorchTrainer:
             
             if self.verbose:
                 metric_name = 'F1' if metric == 'f1' else 'Accuracy'
-                print(f'Epoch {epoch+1}/{epochs}: Train {metric_name}: {train_metric * 100:.2f}%, Val {metric_name}: {val_metric * 100:.2f}%')
+                print(f'Epoch {epoch+1}/{epochs}:')
+                print(f'Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}')
+                print(f'Train {metric_name}: {train_metric:.4f}, Val {metric_name}: {val_metric:.4f}')
             
             # Memory cleanup
-            gc.collect()  # Use only gc.collect() for CPU memory cleanup
+            gc.collect()
         
-        self.plot_learning_curves(train_losses, val_losses, train_metrics, val_metrics, 
-                                metric_name='F1-Score' if metric == 'f1' else 'Accuracy')
+        # Plot learning curves at the end of training
+        self.plot_learning_curves(
+            train_losses, val_losses,
+            train_metrics, val_metrics,
+            metric_name='F1-Score' if metric == 'f1' else 'Accuracy'
+        )
         
         return train_losses, val_losses, train_metrics, val_metrics, best_val_metric
 
