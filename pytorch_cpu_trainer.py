@@ -96,7 +96,7 @@ class CustomDataset(Dataset):
     
     def __getitem__(self, idx):
         return self.features[idx], self.labels[idx]
-
+MLPClassifier
 class MLPClassifier(nn.Module):
     def __init__(self, input_size, hidden_layers, num_classes=3, dropout_rate=0.2, use_batch_norm=True, config=None):
         super(MLPClassifier, self).__init__()
@@ -411,10 +411,10 @@ class HyperparameterTuner:
     
     def create_model_and_optimizer(self, trial):
         # Extract hyperparameters from trial
-        hidden_layers = []
         n_layers = trial.suggest_int('n_layers', 1, 4)
-        for i in range(n_layers):
-            hidden_layers.append(trial.suggest_int(f'hidden_layer_{i}', 32, 512))
+        # Single width for all layers
+        layer_width = trial.suggest_int('layer_width', 32, 512)
+        hidden_layers = [layer_width] * n_layers
         
         lr = trial.suggest_float('lr', 1e-5, 1e-1, log=True)
         dropout_rate = trial.suggest_float('dropout_rate', 0.1, 0.5)
@@ -428,7 +428,7 @@ class HyperparameterTuner:
             num_classes=self.config['model']['num_classes'],
             dropout_rate=dropout_rate,
             use_batch_norm=use_batch_norm,
-            config=self.config  # Pass config here
+            config=self.config
         )
         
         # Create optimizer
@@ -440,6 +440,7 @@ class HyperparameterTuner:
         
         trial_params = {
             'n_layers': n_layers,
+            'layer_width': layer_width,
             'hidden_layers': hidden_layers,
             'lr': lr,
             'dropout_rate': dropout_rate,
