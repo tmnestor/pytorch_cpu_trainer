@@ -747,6 +747,10 @@ def main():
     if target_column not in train_df.columns or target_column not in val_df.columns:
         raise ValueError(f"Target column '{target_column}' not found in data")
     
+    # Create datasets first
+    train_dataset = CustomDataset(train_df, target_column)
+    val_dataset = CustomDataset(val_df, target_column)
+    
     # Calculate optimal number of workers
     if config['training']['dataloader']['num_workers'] == 'auto':
         num_cpu = psutil.cpu_count(logical=False)
@@ -758,14 +762,10 @@ def main():
     
     # Calculate batch size that divides dataset size evenly
     base_batch_size = config['training']['batch_size']
-    train_size = len(train_df)
-    val_size = len(val_df)
     
-    # Ensure batch size divides dataset sizes approximately evenly
-    effective_batch_size = base_batch_size
-    if train_size < effective_batch_size * 2:
-        effective_batch_size = max(32, train_size // 8)  # Minimum batch size of 32 for stable batch norm
-        logger.warning(f"Reduced batch size to {effective_batch_size} due to small dataset")
+    # Ensure batch size is appropriate for batch norm
+    effective_batch_size = max(32, min(base_batch_size, len(train_dataset) // 8))
+    logger.info(f"Using batch size: {effective_batch_size}")
     
     # Safe DataLoader configuration for 2D data
     dataloader_kwargs = {
