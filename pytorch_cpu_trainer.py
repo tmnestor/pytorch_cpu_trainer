@@ -269,7 +269,7 @@ class PyTorchTrainer:
             del outputs, loss
             torch.cuda.empty_cache() if torch.cuda.is_available() else gc.collect()
         
-        return total_loss / len(train_loader), 100 * correct / total
+        return total_loss / len(train_loader), correct / total
     
     def evaluate(self, val_loader):
         """Evaluates the model on validation data."""
@@ -300,14 +300,15 @@ class PyTorchTrainer:
                 all_labels.extend(batch_y.cpu().numpy())
         
         try:
-            accuracy = 100 * correct / total if total > 0 else 0.0
+            # Convert accuracy to decimal for consistency with F1
+            accuracy = correct / total if total > 0 else 0.0
             f1 = f1_score(all_labels, all_preds, average='weighted') if total > 0 else 0.0
         except Exception as e:
             self.logger.error(f"Error calculating metrics: {str(e)}")
             accuracy = 0.0
             f1 = 0.0
         
-        return (total_loss / len(val_loader)) if len(val_loader) > 0 else float('inf'), accuracy, f1
+        return (total_loss / len(val_loader)), accuracy, f1
 
     def train(self, train_loader, val_loader, epochs, metric='accuracy'):
         """Trains the model for specified number of epochs. 
@@ -350,7 +351,8 @@ class PyTorchTrainer:
             if self.verbose:
                 metric_name = 'F1' if metric == 'f1' else 'Accuracy'
                 metric_value = val_f1 if metric == 'f1' else val_accuracy
-                print(f'Epoch {epoch+1}/{epochs}: Val {metric_name}: {metric_value:.2f}%')
+                # Convert to percentage for display only
+                print(f'Epoch {epoch+1}/{epochs}: Val {metric_name}: {metric_value * 100:.2f}%')
             
             del outputs, loss
             gc.collect()  # Use only gc.collect() for CPU memory cleanup
@@ -974,11 +976,11 @@ def main():
     logger.info(
         f"\nModel Performance:\n"
         f"Validation Loss: {val_loss:.4f}\n"
-        f"Best {metric_name.upper()}: {restored['metric_value']:.4f}\n"
-        f"Validation Accuracy: {val_accuracy:.2f}%\n"
-        f"Validation F1-Score: {val_f1:.4f}\n"
-        f"Best {metric_name.upper()}: {restored['metric_value']:.4f}\n"
-        f"Current {metric_name.upper()}: {metric_value:.4f}"
+        f"Best {metric_name.upper()}: {restored['metric_value'] * 100:.2f}%\n"
+        f"Validation Accuracy: {val_accuracy * 100:.2f}%\n"
+        f"Validation F1-Score: {val_f1 * 100:.2f}%\n"
+        f"Best {metric_name.upper()}: {restored['metric_value'] * 100:.2f}%\n"
+        f"Current {metric_name.upper()}: {metric_value * 100:.2f}%"
     )
 
 if __name__ == "__main__":

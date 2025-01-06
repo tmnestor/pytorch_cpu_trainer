@@ -1,15 +1,17 @@
-# best_model:
-#   best_metric_name: f1_score
-#   best_metric_value: 37.6
-#   dropout_rate: 0.10062301316858495
-#   layer_width: 380
-#   hidden_layers:
-#   - 380
-#   - 380
-#   - 380
-#   learning_rate: 0.000622251201941111
-#   use_batch_norm: true
-#   weight_decay: 0.0
+best_model:
+  best_metric_name: f1_score
+  best_metric_value: 37.6
+  dropout_rate: 0.23120683206391002
+  hidden_layers:
+  - 184
+  - 184
+  - 184
+  - 184
+  layer_width: 184
+  learning_rate: 0.0004056568195757771
+  n_layers: 4
+  use_batch_norm: true
+  weight_decay: 0.0
 data:
   target_column: target
   train_path: input_data/train.csv
