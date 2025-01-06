@@ -75,25 +75,15 @@ class CustomDataset(Dataset):
         self.df = df
         self.target_column = target_column
         self.batch_size = batch_size
+        # Pre-process all data at init for better performance
+        self.features = torch.FloatTensor(df.drop(target_column, axis=1).values)
+        self.labels = torch.LongTensor(df[target_column].values)
         
     def __len__(self):
         return len(self.df)
     
     def __getitem__(self, idx):
-        # Load and convert data in batches
-        start_idx = (idx // self.batch_size) * self.batch_size
-        end_idx = min(start_idx + self.batch_size, len(self.df))
-        
-        if not hasattr(self, f'batch_{start_idx}'):
-            batch_df = self.df.iloc[start_idx:end_idx]
-            setattr(self, f'batch_{start_idx}', {
-                'features': torch.FloatTensor(batch_df.drop(self.target_column, axis=1).values),
-                'labels': torch.LongTensor(batch_df[self.target_column].values)
-            })
-            
-        batch = getattr(self, f'batch_{start_idx}')
-        rel_idx = idx - start_idx
-        return batch['features'][rel_idx], batch['labels'][rel_idx]
+        return self.features[idx], self.labels[idx]
 
 class MLPClassifier(nn.Module):
     def __init__(self, input_size, hidden_layers, num_classes=3, dropout_rate=0.2, use_batch_norm=True):
@@ -128,7 +118,7 @@ class PyTorchTrainer:
         val_loader: DataLoader for validation data
     """
     
-    def __init__(self, model, criterion, optimizer, device='cpu', verbose=False, scheduler=None):
+    def __init__(self, model, criterion, optimizer, device='cpu', verbose=False, scheduler=None, config=None):
         self.model = model.to(device)
         self.criterion = criterion
         self.optimizer = optimizer
@@ -136,6 +126,8 @@ class PyTorchTrainer:
         self.verbose = verbose
         self.scheduler = scheduler
         self.gradient_clip_val = 1.0
+        self.grad_accum_steps = config['training']['memory_management']['optimization']['grad_accumulation']['max_steps']
+        self.batch_multiplier = config['training']['performance']['batch_size_multiplier']
         
         # Initialize mixed precision settings based on hardware support
         self.use_mixed_precision = hasattr(ipex, 'core') and ipex.core.onednn_has_bf16_support()
@@ -149,40 +141,57 @@ class PyTorchTrainer:
         correct = 0
         total = 0
         
-        for batch_X, batch_y in train_loader:
+        # Initialize gradient accumulation
+        self.optimizer.zero_grad(set_to_none=True)
+        accumulated_loss = 0
+        
+        for batch_idx, (batch_X, batch_y) in enumerate(train_loader):
             # Remove channels_last format since we're using 2D data
             batch_X = batch_X.to(self.device)
             batch_y = batch_y.to(self.device)
             
-            self.optimizer.zero_grad(set_to_none=True)  # More efficient than zero_grad()
-            
-            if self.use_mixed_precision:
-                with torch.cpu.amp.autocast(enabled=True, dtype=torch.bfloat16):
-                    outputs = self.model(batch_X)
-                    loss = self.criterion(outputs, batch_y)
-                self.scaler.scale(loss).backward()
-                self.scaler.unscale_(self.optimizer)
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_val)
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-            else:
+            # Forward pass with mixed precision
+            with torch.cpu.amp.autocast(enabled=self.use_mixed_precision, dtype=torch.bfloat16):
                 outputs = self.model(batch_X)
-                loss = self.criterion(outputs, batch_y)
+                loss = self.criterion(outputs, batch_y) / self.grad_accum_steps
+            
+            # Backward pass with gradient accumulation
+            if self.use_mixed_precision:
+                self.scaler.scale(loss).backward()
+            else:
                 loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_val)
-                self.optimizer.step()
+                
+            accumulated_loss += loss.item()
+            
+            # Update weights after accumulating gradients
+            if (batch_idx + 1) % self.grad_accum_steps == 0:
+                if self.use_mixed_precision:
+                    self.scaler.unscale_(self.optimizer)
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_val)
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_val)
+                    self.optimizer.step()
+                
+                self.optimizer.zero_grad(set_to_none=True)
+                
+                if self.scheduler is not None:
+                    self.scheduler.step()
+                    
+                accumulated_loss = 0
+            
+            # Update metrics
+            with torch.no_grad():
+                _, predicted = torch.max(outputs.data, 1)
+                total += batch_y.size(0)
+                correct += (predicted == batch_y).sum().item()
             
             # Memory cleanup
-            total_loss += loss.item()
-            _, predicted = torch.max(outputs.data, 1)
-            total += batch_y.size(0)
-            correct += (predicted == batch_y).sum().item()
-            
             del outputs, loss
-            gc.collect()  # Use only gc.collect() for CPU memory cleanup
+            torch.cuda.empty_cache() if torch.cuda.is_available() else gc.collect()
         
-        accuracy = 100 * correct / total
-        return total_loss / len(train_loader), accuracy
+        return total_loss / len(train_loader), 100 * correct / total
     
     def evaluate(self, val_loader):
         """Evaluates the model on validation data."""
@@ -700,25 +709,18 @@ def main():
     
     logger.info(f"Using {optimal_workers} workers for data loading")
     
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=config['training']['batch_size'],
-        shuffle=True,
-        num_workers=optimal_workers,  # Use calculated optimal workers
-        pin_memory=config['training']['dataloader']['pin_memory'],
-        persistent_workers=config['training']['dataloader']['persistent_workers'],
-        prefetch_factor=config['training']['dataloader']['prefetch_factor'],
-        drop_last=config['training']['drop_last']
-    )
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=config['training']['batch_size'],
-        shuffle=False,
-        num_workers=optimal_workers,  # Apply same worker count to validation loader
-        pin_memory=config['training']['dataloader']['pin_memory'],
-        persistent_workers=config['training']['dataloader']['persistent_workers'],
-        prefetch_factor=config['training']['dataloader']['prefetch_factor']
-    )
+    # Enhanced DataLoader configuration
+    dataloader_args = {
+        'batch_size': config['training']['batch_size'] * config['training']['performance']['batch_size_multiplier'],
+        'num_workers': optimal_workers,
+        'pin_memory': config['training']['dataloader']['pin_memory'],
+        'persistent_workers': config['training']['dataloader']['persistent_workers'],
+        'prefetch_factor': config['training']['dataloader']['prefetch_factor'],
+        'drop_last': config['training']['drop_last']
+    }
+    
+    train_loader = DataLoader(train_dataset, shuffle=True, **dataloader_args)
+    val_loader = DataLoader(val_dataset, shuffle=False, **dataloader_args)
     
     # If best parameters don't exist in config, run hyperparameter tuning
     if 'best_model' not in config:
@@ -773,7 +775,8 @@ def main():
         model, criterion, optimizer,
         device=config['training']['device'],
         verbose=True,
-        scheduler=scheduler
+        scheduler=scheduler,
+        config=config
     )
     
     # Evaluate restored model

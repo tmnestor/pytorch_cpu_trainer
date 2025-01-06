@@ -80,12 +80,15 @@ training:
     max_checkpoints: 5
     save_dir: checkpoints
   cpu_optimization:
-    channels_last: true
+    channels_last: false
     enable_mkldnn: true
     jit_compile: true
     num_threads: auto
     optimization_level: 2
     use_bfloat16: true
+    numa_aware: true
+    kernel_mode: "aggressive"
+    fast_math: true
   dataloader:
     # Automatically adjust based on system capabilities
     num_workers: auto  # Changed from 8 to auto
@@ -101,8 +104,9 @@ training:
     optimization:
       grad_accumulation:
         enabled: true
-        max_steps: 8
+        max_steps: 16  # Increased from 8
         min_steps: 1
+        initial_steps: 4
       initial_batch_size_factor: 2.0
       min_batch_size: 1
       target_memory_usage: 0.95
@@ -111,6 +115,7 @@ training:
       export_profile: true
       log_frequency: 100
       profile_path: memory_profile.json
+      memory_profiling: true
   metrics:
     available:
       accuracy:
@@ -159,7 +164,7 @@ training:
       lr: 0.01
       momentum: 0.9
   performance:
-    batch_size_multiplier: 2
+    batch_size_multiplier: 4
     enable_mkl: true
     enable_mkldnn: true
     grad_accum_steps: 4
@@ -168,6 +173,8 @@ training:
     persistent_workers: true
     pin_memory: true
     prefetch_factor: 2
+    vectorize_code: true
+    memory_fraction: 0.95
   profiling:
     enabled: true
     export_trace: true
