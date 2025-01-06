@@ -712,10 +712,36 @@ def main():
     # Create necessary directories first
     os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
     os.makedirs(config['logging']['directory'], exist_ok=True)
+    os.makedirs('input_data', exist_ok=True)  # Create input data directory
     
     # Set up main logger
     logger = setup_logger(config, 'MLPTrainer')
     logger.info("Starting training process...")
+    
+    # Verify input data paths
+    train_path = config['data']['train_path']
+    val_path = config['data']['val_path']
+    
+    if not os.path.exists(train_path):
+        logger.error(f"Training data file not found: {train_path}")
+        raise FileNotFoundError(f"Training data file not found: {train_path}")
+        
+    if not os.path.exists(val_path):
+        logger.error(f"Validation data file not found: {val_path}")
+        raise FileNotFoundError(f"Validation data file not found: {val_path}")
+        
+    logger.info(f"Found input files: \n  Train: {train_path}\n  Val: {val_path}")
+    
+    # Verify file sizes
+    train_size = os.path.getsize(train_path)
+    val_size = os.path.getsize(val_path)
+    
+    if train_size == 0:
+        raise ValueError(f"Training data file is empty: {train_path}")
+    if val_size == 0:
+        raise ValueError(f"Validation data file is empty: {val_path}")
+        
+    logger.info(f"Input file sizes: \n  Train: {train_size/1024:.2f}KB\n  Val: {val_size/1024:.2f}KB")
     
     # Initialize CPU optimization (logger is now initialized in constructor)
     cpu_optimizer = CPUOptimizer(config)
@@ -741,19 +767,36 @@ def main():
     
     # Create datasets and dataloaders with validation
     try:
-        train_df = pd.read_csv(config['data']['train_path'])
-        val_df = pd.read_csv(config['data']['val_path'])
+        train_df = pd.read_csv(train_path)
+        logger.info(f"Training data shape: {train_df.shape}")
+        logger.info(f"Training data columns: {train_df.columns.tolist()}")
+        
+        val_df = pd.read_csv(val_path)
+        logger.info(f"Validation data shape: {val_df.shape}")
+        logger.info(f"Validation data columns: {val_df.columns.tolist()}")
         
         # Verify data is not empty
         if train_df.empty or val_df.empty:
             raise ValueError("Empty dataset detected")
-            
-        logger.info(f"Loaded training data: {train_df.shape}, validation data: {val_df.shape}")
         
-        # Verify target column exists
+        # Verify target column exists and contains valid values
         target_column = config['data']['target_column']
-        if target_column not in train_df.columns or target_column not in val_df.columns:
-            raise ValueError(f"Target column '{target_column}' not found in data")
+        if target_column not in train_df.columns:
+            raise ValueError(f"Target column '{target_column}' not found in training data")
+        if target_column not in val_df.columns:
+            raise ValueError(f"Target column '{target_column}' not found in validation data")
+            
+        # Verify number of classes matches config
+        num_classes = config['model']['num_classes']
+        train_classes = train_df[target_column].nunique()
+        val_classes = val_df[target_column].nunique()
+        
+        if train_classes != num_classes:
+            raise ValueError(f"Number of classes in training data ({train_classes}) doesn't match config ({num_classes})")
+        if val_classes != num_classes:
+            raise ValueError(f"Number of classes in validation data ({val_classes}) doesn't match config ({num_classes})")
+            
+        logger.info(f"Data validation successful. Found {num_classes} classes in both datasets")
         
         train_dataset = CustomDataset(train_df, target_column)
         val_dataset = CustomDataset(val_df, target_column)
