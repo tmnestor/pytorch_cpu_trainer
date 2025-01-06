@@ -208,6 +208,10 @@ class PyTorchTrainer:
         correct = 0
         total = 0
         
+        if len(val_loader) == 0:
+            self.logger.warning("Empty validation loader!")
+            return float('inf'), 0.0, 0.0
+        
         with torch.no_grad():
             for batch_X, batch_y in val_loader:
                 # Remove channels_last format here too
@@ -223,9 +227,15 @@ class PyTorchTrainer:
                 all_preds.extend(predicted.cpu().numpy())
                 all_labels.extend(batch_y.cpu().numpy())
         
-        accuracy = 100 * correct / total
-        f1 = f1_score(all_labels, all_preds, average='weighted')
-        return total_loss / len(val_loader), accuracy, f1
+        try:
+            accuracy = 100 * correct / total if total > 0 else 0.0
+            f1 = f1_score(all_labels, all_preds, average='weighted') if total > 0 else 0.0
+        except Exception as e:
+            self.logger.error(f"Error calculating metrics: {str(e)}")
+            accuracy = 0.0
+            f1 = 0.0
+        
+        return (total_loss / len(val_loader)) if len(val_loader) > 0 else float('inf'), accuracy, f1
 
     def train(self, train_loader, val_loader, epochs, metric='accuracy'):
         """Trains the model for specified number of epochs. 
@@ -369,10 +379,18 @@ class HyperparameterTuner:
         
         try:
             for epoch in range(self.config['training']['epochs']):
+                if len(train_loader) == 0 or len(val_loader) == 0:
+                    self.logger.warning("Empty data loader detected!")
+                    raise optuna.TrialPruned()
+                
                 # Training step
                 trainer.train_epoch(train_loader)
                 # Evaluation step
-                _, accuracy, f1 = trainer.evaluate(val_loader)
+                val_loss, accuracy, f1 = trainer.evaluate(val_loader)
+                
+                if val_loss == float('inf') or (accuracy == 0.0 and f1 == 0.0):
+                    self.logger.warning("Invalid metrics detected, pruning trial")
+                    raise optuna.TrialPruned()
                 
                 # Get appropriate metric
                 metric = f1 if self.config['training']['optimization_metric'] == 'f1' else accuracy
@@ -408,7 +426,7 @@ class HyperparameterTuner:
                     
         except Exception as e:
             if not isinstance(e, optuna.TrialPruned):
-                print(f"Trial failed with error: {str(e)}")
+                self.logger.error(f"Trial failed with error: {str(e)}")
             raise
             
         return best_metric
