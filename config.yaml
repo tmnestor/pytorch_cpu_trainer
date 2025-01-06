@@ -1,219 +1,90 @@
-best_model:
-  best_metric_name: f1_score
-  best_metric_value: 36.8
-  dropout_rate: 0.2642273283611098
-  hidden_layers:
-  - 196
-  learning_rate: 0.00011322398223060966
-  use_batch_norm: false
-  weight_decay: 0.00038729695652991775
 data:
   target_column: target
   train_path: input_data/train.csv
   val_path: input_data/val.csv
-logging:
-  console_format: simple
-  console_level: WARNING
-  directory: logs
-  figures_dir: figures
-  file_level: INFO
-  handlers:
-    cpu_optimization:
-      filename: cpu_optimization.log
-      level: DEBUG
-    hyperparameter_tuning:
-      filename: hyperparameter_tuning.log
-      level: INFO
-    training:
-      filename: training.log
-      level: INFO
+
 model:
   input_size: 4
   num_classes: 4
   save_path: checkpoints/model.pt
-optimization:
-  adaptive_strategy:
-    cycling:
-      cycle_length_epochs: 10
-      enabled: true
-      initial_cycles: 2
-    enabled: true
-    improvement_threshold: 0.001
-    min_lr_factor: 0.001
-    plateau:
-      enabled: true
-      patience: 5
-      reduction_factor: 0.5
-    strategy_switch_patience: 3
-  early_stopping:
-    min_delta: 0.001
-    patience: 10
-  n_trials: 50
-  optimization_metric: f1_score
-  pruning:
-    deterioration_threshold: 0.3
-    min_trials_complete: 5
-    warm_up_epochs: 3
-  regularization:
-    batch_norm_prob: 0.5
-    weight_decay_range:
-    - 1e-5
-    - 1e-2
-  warmup:
-    enabled: true
-    max_steps: 1000
-    min_steps: 0
+
+logging:
+  directory: logs
+  console_level: WARNING
+  file_level: INFO
+  handlers:
+    hyperparameter_tuning:
+      filename: hyperparameter_tuning.log
+      level: INFO
+    cpu_optimization:
+      filename: cpu_optimization.log
+      level: DEBUG
+    mlptrainer:
+      filename: mlptrainer.log
+      level: INFO
+
 training:
-  batch_norm:
-    eps: 1.0e-05
-    stabilize_interval: 100
-  batch_size: 128
-  checkpointing:
-    enabled: true
-    frequency: 10
-    max_checkpoints: 5
-    save_dir: checkpoints
-  cpu_optimization:
-    channels_last: false
-    enable_mkldnn: true
-    fast_math: true
-    graph_optimization: true
-    jit_compile: true
-    kernel_mode: aggressive
-    num_threads: auto
-    numa_aware: true
-    optimization_level: 3
-    use_bfloat16: true
-  dataloader:
-    num_workers: auto
-    persistent_workers: true
-    pin_memory: false
-    prefetch_factor: 2
   device: cpu
-  drop_last: true
   epochs: 100
-  label_smoothing:
-    enabled: true
-    factor: 0.1
+  batch_size: 128
+  seed: 42
   loss_function: CrossEntropyLoss
-  memory_management:
-    enabled: true
-    optimization:
-      grad_accumulation:
-        enabled: true
-        initial_steps: 4
-        max_steps: 16
-        min_steps: 1
-      initial_batch_size_factor: 2.0
-      min_batch_size: 1
-      target_memory_usage: 0.95
-    profiling:
-      enabled: true
-      export_profile: true
-      log_frequency: 100
-      memory_profiling: true
-      profile_path: memory_profile.json
-  metrics:
-    available:
-      accuracy:
-        name: MulticlassAccuracy
-        params:
-          average: micro
-      auroc:
-        name: MulticlassAUROC
-        params:
-          average: macro
-      cohen_kappa:
-        name: MulticlassCohenKappa
-      confusion_matrix:
-        name: MulticlassConfusionMatrix
-      f1_score:
-        name: MulticlassF1Score
-        params:
-          average: macro
-      precision:
-        name: MulticlassPrecision
-        params:
-          average: macro
-      recall:
-        name: MulticlassRecall
-        params:
-          average: macro
-      specificity:
-        name: MulticlassSpecificity
-    primary: f1_score
-    tracked:
-    - accuracy
-    - f1_score
-    - precision
-    - recall
-  num_workers: 4
   optimization_metric: f1_score
+  
   optimizer_choice: Adam
   optimizer_params:
     Adam:
-      betas:
-      - 0.9
-      - 0.999
-      eps: 1.0e-08
       lr: 0.0001
-    SGD:
-      lr: 0.01
-      momentum: 0.9
-  performance:
-    batch_size_multiplier: 1
-    enable_mkl: true
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+
+  cpu_optimization:
     enable_mkldnn: true
-    grad_accum_steps: 4
-    memory_fraction: 0.95
-    mixed_precision: true
-    num_workers: 8
+    num_threads: auto
+    use_bfloat16: true
+    jit_compile: true
+
+  dataloader:
+    num_workers: auto
     persistent_workers: true
-    pin_memory: true
     prefetch_factor: 2
-    vectorize_code: true
-  profiling:
+    pin_memory: false
+    drop_last: true
+
+  label_smoothing:
     enabled: true
-    export_trace: true
-    trace_path: cpu_trace.json
+    factor: 0.1
+
+  memory_management:
+    optimization:
+      grad_accumulation:
+        enabled: true
+        max_steps: 16
+
   scheduler:
+    type: OneCycleLR
     params:
-      anneal_strategy: cos
-      div_factor: 25.0
-      final_div_factor: 1e4
       max_lr_factor: 10.0
       pct_start: 0.3
-    type: OneCycleLR
-  seed: 42
+      div_factor: 25.0
+      final_div_factor: 1e4
+
   swa:
     enabled: true
     start_epoch: 75
     lr: 0.001
-    momentum: 0.9
-  validation:
-    confidence_analysis:
-      enabled: true
-      thresholds:
-        high_confidence: 0.9
-        low_confidence: 0.6
-    cross_validation:
-      enabled: true
-      metrics:
-      - accuracy
-      - f1_score
-      - precision
-      - recall
-      n_splits: 5
-    error_analysis:
-      analyze_misclassifications: true
-      enabled: true
-      save_confusion_matrix: true
-    frequency: 1
-    metrics:
-    - accuracy
-    - f1_score
+
   warmup:
     enabled: true
     max_steps: 1000
-    min_steps: 500
-    initial_lr_factor: 0.01  # Initial LR will be base_lr * this factor
+    initial_lr_factor: 0.01
+
+optimization:
+  n_trials: 50
+  early_stopping:
+    patience: 10
+    min_delta: 0.001
+  pruning:
+    warm_up_epochs: 3
+    deterioration_threshold: 0.3
+    min_trials_complete: 5
