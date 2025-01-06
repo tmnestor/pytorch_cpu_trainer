@@ -130,13 +130,16 @@ class PyTorchTrainer:
     
     def __init__(self, model, criterion, optimizer, device='cpu', verbose=False, scheduler=None):
         self.model = model.to(device)
+        if self.config['training']['cpu_optimization']['jit_compile']:
+            self.model = torch.compile(self.model)  # Use PyTorch 2.0 compile
         self.criterion = criterion
         self.optimizer = optimizer
         self.device = device
         self.verbose = verbose
         self.scheduler = scheduler
-        # Remove CUDA scaler since this is CPU-only
         self.gradient_clip_val = 1.0
+        # Initialize mixed precision scaler
+        self.scaler = torch.cpu.amp.GradScaler()
         
     def train_epoch(self, train_loader):
         """Trains the model for one epoch."""
@@ -146,21 +149,20 @@ class PyTorchTrainer:
         total = 0
         
         for batch_X, batch_y in train_loader:
-            batch_X = batch_X.to(self.device)
+            batch_X = batch_X.to(self.device, memory_format=torch.channels_last)  # Memory format optimization
             batch_y = batch_y.to(self.device)
             
-            self.optimizer.zero_grad()  # Clear gradients
+            self.optimizer.zero_grad(set_to_none=True)  # More efficient than zero_grad()
             
-            with torch.autocast(device_type='cpu', dtype=torch.bfloat16):
+            with torch.cpu.amp.autocast(enabled=True, dtype=torch.bfloat16):
                 outputs = self.model(batch_X)
                 loss = self.criterion(outputs, batch_y)
             
-            loss.backward()
+            self.scaler.scale(loss).backward()
+            self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.gradient_clip_val)
-            self.optimizer.step()
-            
-            if self.scheduler is not None:
-                self.scheduler.step()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
             
             # Memory cleanup
             total_loss += loss.item()
@@ -598,14 +600,26 @@ class CPUOptimizer:
         
         # Configure IPEX if available and model exists
         if features['ipex'] and self.model is not None and hasattr(self, 'optimizer'):
-            optimized = ipex.optimize(self.model, optimizer=self.optimizer)
+            # Configure IPEX with channels last memory format
+            self.model = self.model.to(memory_format=torch.channels_last)
+            
+            # Enable IPEX optimizations with mixed precision
+            optimized = ipex.optimize(
+                self.model,
+                optimizer=self.optimizer,
+                dtype=torch.bfloat16,
+                inplace=True,
+                auto_kernel_selection=True
+            )
+            
             if isinstance(optimized, tuple):
                 self.model, self.optimizer = optimized
             else:
                 self.model = optimized
-                
-            if optimizations['use_bfloat16']:
-                self.model = self.model.to(torch.bfloat16)
+            
+            # JIT trace for better performance
+            if self.config['training']['cpu_optimization']['jit_compile']:
+                self.model = torch.jit.trace(self.model, torch.randn(1, self.config['model']['input_size']))
         
         self.log_optimization_config(features, optimizations)
         return optimizations
@@ -659,7 +673,12 @@ def main():
     train_loader = DataLoader(
         train_dataset,
         batch_size=config['training']['batch_size'],
-        shuffle=True
+        shuffle=True,
+        num_workers=config['training']['dataloader']['num_workers'],
+        pin_memory=config['training']['dataloader']['pin_memory'],
+        persistent_workers=config['training']['dataloader']['persistent_workers'],
+        prefetch_factor=config['training']['dataloader']['prefetch_factor'],
+        drop_last=config['training']['drop_last']
     )
     val_loader = DataLoader(
         val_dataset,
