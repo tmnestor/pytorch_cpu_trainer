@@ -661,10 +661,16 @@ def main():
     # Create criterion for evaluation
     criterion = getattr(nn, config['training']['loss_function'])()
     
-    # Add scheduler with corrected parameters
-    max_lr = config['training']['optimizer_params']['Adam']['lr'] * config['training']['scheduler']['params'].get('max_lr_factor', 10.0)
+    # Add scheduler with corrected parameters and type conversion
     scheduler_params = config['training']['scheduler']['params'].copy()
-    scheduler_params.pop('max_lr_factor', None)  # Remove max_lr_factor from params
+    max_lr_factor = float(scheduler_params.pop('max_lr_factor', 10.0))
+    base_lr = config['training']['optimizer_params']['Adam']['lr']
+    max_lr = base_lr * max_lr_factor
+    
+    # Convert string values to float
+    for key in ['div_factor', 'final_div_factor', 'pct_start']:
+        if key in scheduler_params:
+            scheduler_params[key] = float(scheduler_params[key])
     
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
