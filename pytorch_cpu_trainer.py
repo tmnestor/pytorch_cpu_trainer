@@ -379,19 +379,7 @@ class PyTorchTrainer:
 class HyperparameterTuner:
     def __init__(self, config):
         self.config = config
-        self.best_trial_value = float('-inf')2025-01-06 21:49:21,672 - pytorch_cpu_trainer.py - MLPTrainer - INFO - Starting model training...
-Training:   0%|                                                                                                                                                                                     | 0/100 [00:00<?, ?it/s]Epoch 1/100: Train Accuracy: 31.08%, Val Accuracy: 34.12%
-Training:   0%|                                                                                                                                                                                     | 0/100 [00:00<?, ?it/s]
-Traceback (most recent call last):
-  File "/home/jovyan/work/pytorch_cpu_trainer.py", line 1015, in <module>
-    main()
-  File "/home/jovyan/work/pytorch_cpu_trainer.py", line 998, in main
-    train_losses, val_losses, train_metrics, val_metrics, best_val_metric = trainer.train(
-                                                                            ^^^^^^^^^^^^^^
-  File "/home/jovyan/work/pytorch_cpu_trainer.py", line 371, in train
-    del outputs, loss
-        ^^^^^^^
-UnboundLocalError: cannot access local variable 'outputs' where it is not associated with a value
+        self.best_trial_value = float('-inf')  # Fix syntax error here
         self.best_model_state = None
         self.best_optimizer_state = None
         self.best_params = None
