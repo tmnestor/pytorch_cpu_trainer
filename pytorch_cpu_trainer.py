@@ -1,3 +1,6 @@
+
+import gc
+
 import random
 import os
 import sys
