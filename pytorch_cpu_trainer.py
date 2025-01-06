@@ -126,8 +126,14 @@ class PyTorchTrainer:
         self.verbose = verbose
         self.scheduler = scheduler
         self.gradient_clip_val = 1.0
-        self.grad_accum_steps = config['training']['memory_management']['optimization']['grad_accumulation']['max_steps']
-        self.batch_multiplier = config['training']['performance']['batch_size_multiplier']
+        
+        # Set default values if config is not provided
+        if config is None:
+            self.grad_accum_steps = 1
+            self.batch_multiplier = 1
+        else:
+            self.grad_accum_steps = config['training']['memory_management']['optimization']['grad_accumulation']['max_steps']
+            self.batch_multiplier = config['training']['performance']['batch_size_multiplier']
         
         # Initialize mixed precision settings based on hardware support
         self.use_mixed_precision = hasattr(ipex, 'core') and ipex.core.onednn_has_bf16_support()
@@ -348,12 +354,13 @@ class HyperparameterTuner:
         model, optimizer, trial_params = self.create_model_and_optimizer(trial)
         criterion = getattr(nn, self.config['training']['loss_function'])()
         
-        # Create trainer with minimal components for tuning
+        # Create trainer with minimal components for tuning and pass config
         trainer = PyTorchTrainer(
             model=model,
             criterion=criterion,
             optimizer=optimizer,
-            device=self.config['training']['device']
+            device=self.config['training']['device'],
+            config=self.config  # Pass config to trainer
         )
         
         best_metric = float('-inf')
