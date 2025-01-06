@@ -216,6 +216,8 @@ class PyTorchTrainer:
         """Trains the model for one epoch."""
         self.model.train()
         total_loss = 0
+        all_preds = []
+        all_labels = []
         correct = 0
         total = 0
         
@@ -264,12 +266,12 @@ class PyTorchTrainer:
                 _, predicted = torch.max(outputs.data, 1)
                 total += batch_y.size(0)
                 correct += (predicted == batch_y).sum().item()
-            
-            # Memory cleanup
-            del outputs, loss
-            torch.cuda.empty_cache() if torch.cuda.is_available() else gc.collect()
+                all_preds.extend(predicted.cpu().numpy())
+                all_labels.extend(batch_y.cpu().numpy())
         
-        return total_loss / len(train_loader), correct / total
+        accuracy = correct / total if total > 0 else 0.0
+        f1 = f1_score(all_labels, all_preds, average='weighted') if len(all_preds) > 0 else 0.0
+        return total_loss / len(train_loader), accuracy, f1
     
     def evaluate(self, val_loader):
         """Evaluates the model on validation data."""
@@ -326,18 +328,11 @@ class PyTorchTrainer:
                 if self.scheduler is not None:
                     self.scheduler.step()
             
-            train_loss, train_accuracy = self.train_epoch(train_loader)
-            
-            # Update BatchNorm for SWA model if needed
-            if epoch == epochs - 1 and self.swa_model is not None:
-                torch.optim.swa_utils.update_bn(train_loader, self.swa_model)
-                # Evaluate with SWA model
-                self.model = self.swa_model
-            
+            train_loss, train_accuracy, train_f1 = self.train_epoch(train_loader)
             val_loss, val_accuracy, val_f1 = self.evaluate(val_loader)
             
             # Select metric based on config
-            train_metric = train_accuracy
+            train_metric = train_f1 if metric == 'f1' else train_accuracy
             val_metric = val_f1 if metric == 'f1' else val_accuracy
             
             train_losses.append(train_loss)
@@ -349,9 +344,7 @@ class PyTorchTrainer:
             
             if self.verbose:
                 metric_name = 'F1' if metric == 'f1' else 'Accuracy'
-                metric_value = val_f1 if metric == 'f1' else val_accuracy
-                # Convert to percentage for display only
-                print(f'Epoch {epoch+1}/{epochs}: Val {metric_name}: {metric_value * 100:.2f}%')
+                print(f'Epoch {epoch+1}/{epochs}: Train {metric_name}: {train_metric * 100:.2f}%, Val {metric_name}: {val_metric * 100:.2f}%')
             
             del outputs, loss
             gc.collect()  # Use only gc.collect() for CPU memory cleanup
@@ -968,19 +961,25 @@ def main():
     
     # Evaluate model
     val_loss, val_accuracy, val_f1 = trainer.evaluate(val_loader)
+    train_loss, train_accuracy, train_f1 = trainer.train_epoch(train_loader)
     
     metric_name = config['training']['optimization_metric']
-    current_metric = val_f1 if metric_name == 'f1' else val_accuracy
+    current_train_metric = train_f1 if metric_name == 'f1' else train_accuracy
+    current_val_metric = val_f1 if metric_name == 'f1' else val_accuracy
     best_saved_metric = restored['metric_value']
     
     logger.info(
         f"\nModel Performance:\n"
+        f"Training Loss: {train_loss:.4f}\n"
         f"Validation Loss: {val_loss:.4f}\n"
+        f"Training Accuracy: {train_accuracy * 100:.2f}%\n"
         f"Validation Accuracy: {val_accuracy * 100:.2f}%\n"
+        f"Training F1-Score: {train_f1 * 100:.2f}%\n"
         f"Validation F1-Score: {val_f1 * 100:.2f}%\n"
         f"\nBest Model Metrics:\n"
         f"Best {metric_name.upper()}: {best_saved_metric * 100:.2f}%\n"
-        f"Current {metric_name.upper()}: {val_f1 * 100:.2f}%"  # Changed from current_metric to val_f1
+        f"Current Train {metric_name.upper()}: {current_train_metric * 100:.2f}%\n"
+        f"Current Val {metric_name.upper()}: {current_val_metric * 100:.2f}%"
     )
 
 if __name__ == "__main__":
