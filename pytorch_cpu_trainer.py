@@ -728,6 +728,17 @@ def main():
     # Continue with the rest of initialization
     optimizations = cpu_optimizer.configure_optimizations()
     
+    # Get optimal number of workers before creating dataloaders
+    if config['training']['dataloader']['num_workers'] == 'auto':
+        optimal_workers = max(1, min(
+            psutil.cpu_count(logical=False) - 1,  # Leave one core for main process
+            6  # Maximum suggested workers
+        ))
+    else:
+        optimal_workers = int(config['training']['dataloader']['num_workers'])
+    
+    logger.info(f"Using {optimal_workers} workers for data loading")
+    
     # Create datasets and dataloaders with validation
     try:
         train_df = pd.read_csv(config['data']['train_path'])
