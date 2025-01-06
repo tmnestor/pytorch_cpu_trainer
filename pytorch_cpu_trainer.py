@@ -1,4 +1,3 @@
-
 import gc
 
 import random
@@ -119,7 +118,7 @@ class PyTorchTrainer:
         self.device = device
         self.verbose = verbose
         self.scheduler = scheduler
-        self.scaler = torch.cuda.amp.GradScaler()
+        # Remove CUDA scaler since this is CPU-only
         self.gradient_clip_val = 1.0
         
     def train_epoch(self, train_loader):
@@ -153,7 +152,7 @@ class PyTorchTrainer:
             correct += (predicted == batch_y).sum().item()
             
             del outputs, loss
-            torch.cuda.empty_cache() if torch.cuda.is_available() else gc.collect()
+            gc.collect()  # Use only gc.collect() for CPU memory cleanup
         
         accuracy = 100 * correct / total
         return total_loss / len(train_loader), accuracy
@@ -212,6 +211,9 @@ class PyTorchTrainer:
                 metric_name = 'F1' if metric == 'f1' else 'Accuracy'
                 metric_value = val_f1 if metric == 'f1' else val_accuracy
                 print(f'Epoch {epoch+1}/{epochs}: Val {metric_name}: {metric_value:.2f}%')
+            
+            del outputs, loss
+            gc.collect()  # Use only gc.collect() for CPU memory cleanup
         
         self.plot_learning_curves(train_losses, val_losses, train_metrics, val_metrics, 
                                 metric_name='F1-Score' if metric == 'f1' else 'Accuracy')
