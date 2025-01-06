@@ -692,7 +692,7 @@ def main():
     # Get optimal number of workers based on system capabilities
     if config['training']['dataloader']['num_workers'] == 'auto':
         optimal_workers = max(1, min(
-            psutil.cpu_count(logical(False)) - 1,  # Leave one core for main process
+            psutil.cpu_count(logical=False) - 1,  # Leave one core for main process
             6  # Maximum suggested workers
         ))
     else:
