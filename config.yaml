@@ -1,15 +1,14 @@
 best_model:
   best_metric_name: f1_score
-  best_metric_value: 37.6
-  dropout_rate: 0.23120683206391002
+  best_metric_value: 0.344
+  dropout_rate: 0.1803536563542862
   hidden_layers:
-  - 184
-  - 184
-  - 184
-  - 184
-  layer_width: 184
-  learning_rate: 0.0004056568195757771
-  n_layers: 4
+  - 460
+  - 460
+  - 460
+  layer_width: 460
+  learning_rate: 6.6649050441436e-05
+  n_layers: 3
   use_batch_norm: true
   weight_decay: 0.0
 data:
@@ -32,7 +31,7 @@ logging:
       level: INFO
 model:
   input_size: 4
-  num_classes: 4
+  num_classes: 3
   save_path: checkpoints/model.pt
 optimization:
   early_stopping:

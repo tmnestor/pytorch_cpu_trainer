@@ -978,9 +978,11 @@ def main():
         f"Validation Loss: {val_loss:.4f}\n"
         f"Best {metric_name.upper()}: {restored['metric_value'] * 100:.2f}%\n"
         f"Validation Accuracy: {val_accuracy * 100:.2f}%\n"
+        f"Validation Accuracy: {val_accuracy * 100:.2f}%\n"
         f"Validation F1-Score: {val_f1 * 100:.2f}%\n"
-        f"Best {metric_name.upper()}: {restored['metric_value'] * 100:.2f}%\n"
-        f"Current {metric_name.upper()}: {metric_value * 100:.2f}%"
+        f"\nBest Model Metrics:\n"
+        f"Best {metric_name.upper()}: {best_metric * 100:.2f}%\n"
+        f"Current {metric_name.upper()}: {current_metric * 100:.2f}%"
     )
 
 if __name__ == "__main__":
