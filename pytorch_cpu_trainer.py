@@ -613,11 +613,13 @@ def save_best_params_to_config(config_path, best_trial, best_params):
     if 'best_model' not in config:
         config['best_model'] = {}
     
-    # Format parameters for config
-    hidden_layers = [best_params[f'hidden_layer_{i}'] for i in range(best_params['n_layers'])]
+    # Create hidden layers list from layer width and number of layers
+    hidden_layers = [best_params['layer_width']] * best_params['n_layers']
     
     config['best_model'].update({
         'hidden_layers': hidden_layers,
+        'layer_width': best_params['layer_width'],
+        'n_layers': best_params['n_layers'],
         'dropout_rate': best_params['dropout_rate'],
         'learning_rate': best_params['lr'],
         'use_batch_norm': best_params['use_batch_norm'],
