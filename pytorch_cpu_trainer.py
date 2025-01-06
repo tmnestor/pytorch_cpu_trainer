@@ -712,38 +712,13 @@ def main():
     # Create necessary directories first
     os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
     os.makedirs(config['logging']['directory'], exist_ok=True)
-    os.makedirs('input_data', exist_ok=True)  # Create input data directory
+    os.makedirs('input_data', exist_ok=True)
     
     # Set up main logger
     logger = setup_logger(config, 'MLPTrainer')
     logger.info("Starting training process...")
     
-    # Verify input data paths
-    train_path = config['data']['train_path']
-    val_path = config['data']['val_path']
-    
-    if not os.path.exists(train_path):
-        logger.error(f"Training data file not found: {train_path}")
-        raise FileNotFoundError(f"Training data file not found: {train_path}")
-        
-    if not os.path.exists(val_path):
-        logger.error(f"Validation data file not found: {val_path}")
-        raise FileNotFoundError(f"Validation data file not found: {val_path}")
-        
-    logger.info(f"Found input files: \n  Train: {train_path}\n  Val: {val_path}")
-    
-    # Verify file sizes
-    train_size = os.path.getsize(train_path)
-    val_size = os.path.getsize(val_path)
-    
-    if train_size == 0:
-        raise ValueError(f"Training data file is empty: {train_path}")
-    if val_size == 0:
-        raise ValueError(f"Validation data file is empty: {val_path}")
-        
-    logger.info(f"Input file sizes: \n  Train: {train_size/1024:.2f}KB\n  Val: {val_size/1024:.2f}KB")
-    
-    # Initialize CPU optimization (logger is now initialized in constructor)
+    # Initialize CPU optimization early
     cpu_optimizer = CPUOptimizer(config)
     cpu_optimizer.configure_thread_settings()
     
@@ -751,155 +726,144 @@ def main():
     set_seed(config['training']['seed'])
     logger.info(f"Set random seed to {config['training']['seed']}")
     
-    # Continue with the rest of initialization
-    optimizations = cpu_optimizer.configure_optimizations()
+    # Load and validate data files
+    train_path = config['data']['train_path']
+    val_path = config['data']['val_path']
     
-    # Get optimal number of workers before creating dataloaders
-    if config['training']['dataloader']['num_workers'] == 'auto':
-        optimal_workers = max(1, min(
-            psutil.cpu_count(logical=False) - 1,  # Leave one core for main process
-            6  # Maximum suggested workers
-        ))
-    else:
-        optimal_workers = int(config['training']['dataloader']['num_workers'])
+    if not os.path.exists(train_path) or not os.path.exists(val_path):
+        raise FileNotFoundError(f"Data files not found: {train_path} or {val_path}")
     
-    logger.info(f"Using {optimal_workers} workers for data loading")
+    train_df = pd.read_csv(train_path)
+    val_df = pd.read_csv(val_path)
     
-    # Create datasets and dataloaders with validation
-    try:
-        train_df = pd.read_csv(train_path)
-        logger.info(f"Training data shape: {train_df.shape}")
-        logger.info(f"Training data columns: {train_df.columns.tolist()}")
-        
-        val_df = pd.read_csv(val_path)
-        logger.info(f"Validation data shape: {val_df.shape}")
-        logger.info(f"Validation data columns: {val_df.columns.tolist()}")
-        
-        # Verify data is not empty
-        if train_df.empty or val_df.empty:
-            raise ValueError("Empty dataset detected")
-        
-        # Verify target column exists and contains valid values
-        target_column = config['data']['target_column']
-        if target_column not in train_df.columns:
-            raise ValueError(f"Target column '{target_column}' not found in training data")
-        if target_column not in val_df.columns:
-            raise ValueError(f"Target column '{target_column}' not found in validation data")
-            
-        # Verify number of classes matches config
-        num_classes = config['model']['num_classes']
-        train_classes = train_df[target_column].nunique()
-        val_classes = val_df[target_column].nunique()
-        
-        if train_classes != num_classes:
-            raise ValueError(f"Number of classes in training data ({train_classes}) doesn't match config ({num_classes})")
-        if val_classes != num_classes:
-            raise ValueError(f"Number of classes in validation data ({val_classes}) doesn't match config ({num_classes})")
-            
-        logger.info(f"Data validation successful. Found {num_classes} classes in both datasets")
-        
-        train_dataset = CustomDataset(train_df, target_column)
-        val_dataset = CustomDataset(val_df, target_column)
-        
-        # Verify datasets are not empty
-        if len(train_dataset) == 0 or len(val_dataset) == 0:
-            raise ValueError("Empty dataset after preprocessing")
-            
-        logger.info(f"Created datasets - train: {len(train_dataset)}, val: {len(val_dataset)}")
-        
-        # Enhanced DataLoader configuration with validation
-        dataloader_args = {
-            'batch_size': config['training']['batch_size'] * config['training']['performance']['batch_size_multiplier'],
-            'num_workers': optimal_workers,
-            'pin_memory': config['training']['dataloader']['pin_memory'],
-            'persistent_workers': config['training']['dataloader']['persistent_workers'],
-            'prefetch_factor': config['training']['dataloader']['prefetch_factor'],
-            'drop_last': config['training']['drop_last']
-        }
-        
-        train_loader = DataLoader(train_dataset, shuffle=True, **dataloader_args)
-        val_loader = DataLoader(val_dataset, shuffle=False, **dataloader_args)
-        
-        # Verify loaders are properly initialized
-        if len(train_loader) == 0 or len(val_loader) == 0:
-            raise ValueError("Empty data loader detected")
-            
-        logger.info(f"Created data loaders - train batches: {len(train_loader)}, val batches: {len(val_loader)}")
-        
-    except Exception as e:
-        logger.error(f"Data loading failed: {str(e)}")
-        raise
+    # Data validation
+    target_column = config['data']['target_column']
+    if target_column not in train_df.columns or target_column not in val_df.columns:
+        raise ValueError(f"Target column '{target_column}' not found in data")
     
-    # If best parameters don't exist in config, run hyperparameter tuning
+    # Calculate safe batch size
+    min_samples = min(len(train_df), len(val_df))
+    base_batch_size = config['training']['batch_size']
+    multiplier = config['training']['performance']['batch_size_multiplier']
+    
+    # Ensure batch size is at least 1 and at most half the smallest dataset
+    effective_batch_size = min(
+        max(1, base_batch_size * multiplier),
+        min_samples // 2
+    )
+    
+    logger.info(f"Using effective batch size: {effective_batch_size}")
+    
+    # Create datasets
+    train_dataset = CustomDataset(train_df, target_column)
+    val_dataset = CustomDataset(val_df, target_column)
+    
+    # Configure number of workers
+    num_cpu = psutil.cpu_count(logical=False)
+    optimal_workers = min(2, max(1, num_cpu - 1)) if num_cpu else 0
+    
+    # Safe DataLoader configuration
+    dataloader_kwargs = {
+        'batch_size': effective_batch_size,
+        'num_workers': optimal_workers,
+        'pin_memory': False,  # Safer default for CPU
+        'drop_last': False,   # Keep all samples
+    }
+    
+    # Only add these if we have workers
+    if optimal_workers > 0:
+        dataloader_kwargs.update({
+            'persistent_workers': True,
+            'prefetch_factor': 2
+        })
+    
+    train_loader = DataLoader(
+        train_dataset, 
+        shuffle=True,
+        **dataloader_kwargs
+    )
+    
+    val_loader = DataLoader(
+        val_dataset,
+        shuffle=False,
+        **dataloader_kwargs
+    )
+    
+    if len(train_loader) == 0:
+        raise ValueError(
+            f"Empty train loader. Dataset size: {len(train_dataset)}, "
+            f"Batch size: {effective_batch_size}"
+        )
+    
+    if len(val_loader) == 0:
+        raise ValueError(
+            f"Empty validation loader. Dataset size: {len(val_dataset)}, "
+            f"Batch size: {effective_batch_size}"
+        )
+    
+    logger.info(
+        f"DataLoaders created successfully:\n"
+        f"Train batches: {len(train_loader)}\n"
+        f"Val batches: {len(val_loader)}"
+    )
+    
+    # Continue with model training
     if 'best_model' not in config:
         tuner = HyperparameterTuner(config)
         best_trial, best_params = tuner.tune(train_loader, val_loader)
         save_best_params_to_config(config_path, best_trial, best_params)
-        # Reload config with saved parameters
         config = load_config(config_path)
     
-    print("\nBest model parameters from config:")
-    for key, value in config['best_model'].items():
-        print(f"    {key}: {value}")
-    
-    # Restore best model from checkpoint
-    print("\nRestoring best model from checkpoint...")
+    # Restore or create model
     restored = restore_best_model(config)
     model = restored['model']
     optimizer = restored['optimizer']
     
-    # Create criterion for evaluation
+    # Create criterion
     criterion = getattr(nn, config['training']['loss_function'])()
     
-    # Add scheduler with corrected parameters and type conversion
+    # Configure scheduler
     scheduler_params = config['training']['scheduler']['params'].copy()
-    max_lr_factor = float(scheduler_params.pop('max_lr_factor', 10.0))
-    base_lr = config['training']['optimizer_params']['Adam']['lr']
-    max_lr = base_lr * max_lr_factor
+    max_lr = float(config['training']['optimizer_params']['Adam']['lr']) * \
+             float(scheduler_params.pop('max_lr_factor', 10.0))
     
-    # Convert string values to float
-    for key in ['div_factor', 'final_div_factor', 'pct_start']:
-        if key in scheduler_params:
-            scheduler_params[key] = float(scheduler_params[key])
-    
+    # Create scheduler
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         optimizer,
         max_lr=max_lr,
         epochs=config['training']['epochs'],
         steps_per_epoch=len(train_loader),
-        **scheduler_params
+        pct_start=float(scheduler_params.get('pct_start', 0.3)),
+        div_factor=float(scheduler_params.get('div_factor', 25.0)),
+        final_div_factor=float(scheduler_params.get('final_div_factor', 1e4))
     )
     
-    # Initialize CPU optimization with model and optimizer
-    cpu_optimizer = CPUOptimizer(config, model)
-    cpu_optimizer.optimizer = optimizer  # Add optimizer to CPU optimizer
-    optimizations = cpu_optimizer.configure_optimizations()
-    # Get the optimized model and optimizer back
-    model = cpu_optimizer.model
-    optimizer = cpu_optimizer.optimizer
-    
-    # Create trainer for evaluation
+    # Create trainer
     trainer = PyTorchTrainer(
-        model, criterion, optimizer,
+        model=model,
+        criterion=criterion,
+        optimizer=optimizer,
         device=config['training']['device'],
         verbose=True,
         scheduler=scheduler,
         config=config
     )
     
-    # Evaluate restored model
-    print("\nEvaluating restored model on validation set...")
+    # Evaluate model
     val_loss, val_accuracy, val_f1 = trainer.evaluate(val_loader)
     
     metric_name = config['training']['optimization_metric']
     metric_value = val_f1 if metric_name == 'f1' else val_accuracy
     
-    print(f"\nRestored model performance:")
-    print(f"Validation Loss: {val_loss:.4f}")
-    print(f"Validation Accuracy: {val_accuracy:.2f}%")
-    print(f"Validation F1-Score: {val_f1:.4f}")
-    print(f"\nBest {metric_name.upper()} from tuning: {restored['metric_value']:.4f}")
-    print(f"Current {metric_name.upper()}: {metric_value:.4f}")
+    logger.info(
+        f"\nModel Performance:\n"
+        f"Validation Loss: {val_loss:.4f}\n"
+        f"Validation Accuracy: {val_accuracy:.2f}%\n"
+        f"Validation F1-Score: {val_f1:.4f}\n"
+        f"Best {metric_name.upper()}: {restored['metric_value']:.4f}\n"
+        f"Current {metric_name.upper()}: {metric_value:.4f}"
+    )
 
 if __name__ == "__main__":
     main()
+``` 
