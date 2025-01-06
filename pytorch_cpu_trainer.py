@@ -510,7 +510,7 @@ class CPUOptimizer:
         )
         
         # Set thread configurations
-        torch.set_num_threads(optimations['num_threads'])
+        torch.set_num_threads(optimizations['num_threads'])
         if hasattr(torch, 'set_num_interop_threads'):
             torch.set_num_interop_threads(min(4, optimizations['num_threads']))
         
