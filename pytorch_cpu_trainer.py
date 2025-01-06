@@ -106,7 +106,13 @@ class MLPClassifier(nn.Module):
         for hidden_size in hidden_layers:
             layers.append(nn.Linear(prev_size, hidden_size))
             if use_batch_norm:
-                layers.append(nn.BatchNorm1d(hidden_size))
+                # Use batch norm only if we're guaranteeing fixed batch sizes
+                # Otherwise fall back to group norm which is more stable
+                if config['training'].get('drop_last', True):
+                    layers.append(nn.BatchNorm1d(hidden_size))
+                else:
+                    # Group norm with 8 groups is a good default
+                    layers.append(nn.GroupNorm(8, hidden_size))
             layers.append(nn.ReLU())
             layers.append(nn.Dropout(dropout_rate))
             prev_size = hidden_size
@@ -741,70 +747,56 @@ def main():
     if target_column not in train_df.columns or target_column not in val_df.columns:
         raise ValueError(f"Target column '{target_column}' not found in data")
     
-    # Calculate safe batch size
-    min_samples = min(len(train_df), len(val_df))
+    # Calculate batch size that divides dataset size evenly
     base_batch_size = config['training']['batch_size']
-    multiplier = config['training']['performance']['batch_size_multiplier']
+    train_size = len(train_df)
+    val_size = len(val_df)
     
-    # Ensure batch size is at least 1 and at most half the smallest dataset
-    effective_batch_size = min(
-        max(1, base_batch_size * multiplier),
-        min_samples // 2
-    )
+    # Ensure batch size divides dataset sizes approximately evenly
+    effective_batch_size = base_batch_size
+    if train_size < effective_batch_size * 2:
+        effective_batch_size = max(32, train_size // 8)  # Minimum batch size of 32 for stable batch norm
+        logger.warning(f"Reduced batch size to {effective_batch_size} due to small dataset")
     
-    logger.info(f"Using effective batch size: {effective_batch_size}")
-    
-    # Create datasets
-    train_dataset = CustomDataset(train_df, target_column)
-    val_dataset = CustomDataset(val_df, target_column)
-    
-    # Configure number of workers
-    num_cpu = psutil.cpu_count(logical=False)
-    optimal_workers = min(2, max(1, num_cpu - 1)) if num_cpu else 0
-    
-    # Safe DataLoader configuration
+    # Safe DataLoader configuration for 2D data
     dataloader_kwargs = {
         'batch_size': effective_batch_size,
         'num_workers': optimal_workers,
-        'pin_memory': False,  # Safer default for CPU
-        'drop_last': False,   # Keep all samples
+        'pin_memory': False,  # False for CPU training
+        'drop_last': True,    # Always true for consistent batch norm
+        'shuffle': True       # Only for training
     }
     
-    # Only add these if we have workers
     if optimal_workers > 0:
         dataloader_kwargs.update({
             'persistent_workers': True,
             'prefetch_factor': 2
         })
     
+    # Create data loaders with fixed batch size
     train_loader = DataLoader(
-        train_dataset, 
-        shuffle=True,
+        train_dataset,
         **dataloader_kwargs
     )
     
+    # Validation loader - same settings but no shuffle
     val_loader = DataLoader(
         val_dataset,
-        shuffle=False,
-        **dataloader_kwargs
+        **{**dataloader_kwargs, 'shuffle': False}
     )
     
-    if len(train_loader) == 0:
+    # Verify we have enough batches
+    min_batches = 5  # Minimum number of batches for stable training
+    if len(train_loader) < min_batches:
         raise ValueError(
-            f"Empty train loader. Dataset size: {len(train_dataset)}, "
-            f"Batch size: {effective_batch_size}"
-        )
-    
-    if len(val_loader) == 0:
-        raise ValueError(
-            f"Empty validation loader. Dataset size: {len(val_dataset)}, "
-            f"Batch size: {effective_batch_size}"
+            f"Too few training batches ({len(train_loader)}). "
+            f"Reduce batch size or use a larger dataset."
         )
     
     logger.info(
-        f"DataLoaders created successfully:\n"
-        f"Train batches: {len(train_loader)}\n"
-        f"Val batches: {len(val_loader)}"
+        f"DataLoaders created with fixed batch size {effective_batch_size}:\n"
+        f"Train samples: {len(train_dataset)}, batches: {len(train_loader)}\n"
+        f"Val samples: {len(val_dataset)}, batches: {len(val_loader)}"
     )
     
     # Continue with model training
@@ -858,6 +850,7 @@ def main():
     logger.info(
         f"\nModel Performance:\n"
         f"Validation Loss: {val_loss:.4f}\n"
+        f"Best {metric_name.upper()}: {restored['metric_value']:.4f}\n"
         f"Validation Accuracy: {val_accuracy:.2f}%\n"
         f"Validation F1-Score: {val_f1:.4f}\n"
         f"Best {metric_name.upper()}: {restored['metric_value']:.4f}\n"

@@ -69,11 +69,9 @@ optimization:
 training:
   batch_norm:
     eps: 1.0e-05
-    initial_momentum: 0.1
-    max_momentum: 0.1
-    min_momentum: 0.01
+    momentum: 0.1  # Fixed momentum for 2D data
     stabilize_interval: 100
-  batch_size: 64
+  batch_size: 128  # Set a reasonable fixed batch size that divides dataset size evenly
   checkpointing:
     enabled: true
     frequency: 10
@@ -93,10 +91,10 @@ training:
     # Automatically adjust based on system capabilities
     num_workers: auto  # Changed from 8 to auto
     persistent_workers: true
-    pin_memory: true
+    pin_memory: false  # Set to false for CPU training
     prefetch_factor: 2
   device: cpu
-  drop_last: true
+  drop_last: true  # Always true for consistent batch norm
   epochs: 100
   loss_function: CrossEntropyLoss
   memory_management:
@@ -164,7 +162,7 @@ training:
       lr: 0.01
       momentum: 0.9
   performance:
-    batch_size_multiplier: 4
+    batch_size_multiplier: 1  # Set to 1 to maintain fixed batch size
     enable_mkl: true
     enable_mkldnn: true
     grad_accum_steps: 4
@@ -208,5 +206,4 @@ training:
       save_confusion_matrix: true
     frequency: 1
     metrics:
-    - accuracy
-    - f1_score
+    - accuracy    - f1_score
