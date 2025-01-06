@@ -520,16 +520,30 @@ class CPUOptimizer:
         }
         return features
         
+    def configure_thread_settings(self):
+        """Configure thread settings before any PyTorch operations"""
+        if self.config['training']['cpu_optimization']['num_threads'] == 'auto':
+            num_threads = psutil.cpu_count(logical=True)
+        else:
+            num_threads = self.config['training']['cpu_optimization']['num_threads']
+            
+        # Set thread configurations
+        torch.set_num_threads(num_threads)
+        if hasattr(torch, 'set_num_interop_threads'):
+            torch.set_num_interop_threads(min(4, num_threads))
+            
+        # Pin CPU threads
+        os.environ['OMP_NUM_THREADS'] = str(num_threads)
+        os.environ['MKL_NUM_THREADS'] = str(num_threads)
+        return num_threads
+        
     def configure_optimizations(self):
         """Configure CPU-specific optimizations based on detected features."""
         features = self.detect_cpu_features()
         optimizations = {}
         
         # Configure number of threads
-        if self.config['training']['cpu_optimization']['num_threads'] == 'auto':
-            optimizations['num_threads'] = features['threads']
-        else:
-            optimizations['num_threads'] = self.config['training']['cpu_optimization']['num_threads']
+        optimizations['num_threads'] = self.config['training']['cpu_optimization']['num_threads']
         
         # Configure MKL-DNN
         optimizations['enable_mkldnn'] = (
@@ -542,11 +556,6 @@ class CPUOptimizer:
             self.config['training']['cpu_optimization']['use_bfloat16']
         )
         
-        # Set thread configurations
-        torch.set_num_threads(optimizations['num_threads'])
-        if hasattr(torch, 'set_num_interop_threads'):
-            torch.set_num_interop_threads(min(4, optimizations['num_threads']))
-        
         # Enable MKL-DNN if available
         if optimizations['enable_mkldnn']:
             torch.backends.mkldnn.enabled = True
@@ -556,12 +565,6 @@ class CPUOptimizer:
             self.model = ipex.optimize(self.model)
             if optimizations['use_bfloat16']:
                 self.model = self.model.to(torch.bfloat16)
-        
-        # Pin CPU threads
-        if hasattr(torch, 'set_num_threads'):
-            torch.set_num_threads(optimizations['num_threads'])
-            os.environ['OMP_NUM_THREADS'] = str(optimizations['num_threads'])
-            os.environ['MKL_NUM_THREADS'] = str(optimizations['num_threads'])
         
         self.log_optimization_config(features, optimizations)
         return optimizations
@@ -590,15 +593,18 @@ def main():
     # Create necessary directories
     os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
     
+    # Initialize CPU optimization and configure threads before any PyTorch operations
+    cpu_optimizer = CPUOptimizer(config)
+    cpu_optimizer.configure_thread_settings()
+    
     # Set up logging
     setup_logger()
     
-    # Initialize CPU optimization
-    cpu_optimizer = CPUOptimizer(config)
-    optimizations = cpu_optimizer.configure_optimizations()
-    
     # Set seed for reproducibility
     set_seed(config['training']['seed'])
+    
+    # Continue with the rest of initialization
+    optimizations = cpu_optimizer.configure_optimizations()
     
     # Create datasets and dataloaders
     train_df = pd.read_csv(config['data']['train_path'])
