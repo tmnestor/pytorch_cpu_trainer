@@ -1,17 +1,17 @@
-best_model:
-  best_metric_name: f1_score
-  best_metric_value: 0.75
-  dropout_rate: 0.20070963857073587
-  hidden_layers:
-  - 96
-  - 96
-  - 96
-  - 96
-  layer_width: 96
-  learning_rate: 0.0047484509970228544
-  n_layers: 4
-  use_batch_norm: false
-  weight_decay: 0.00012552075771735108
+# best_model:
+#   best_metric_name: f1_score
+#   best_metric_value: 0.75
+#   dropout_rate: 0.20070963857073587
+#   hidden_layers:
+#   - 96
+#   - 96
+#   - 96
+#   - 96
+#   layer_width: 96
+#   learning_rate: 0.0047484509970228544
+#   n_layers: 4
+#   use_batch_norm: false
+#   weight_decay: 0.00012552075771735108
 data:
   target_column: target
   train_path: input_data/train.csv

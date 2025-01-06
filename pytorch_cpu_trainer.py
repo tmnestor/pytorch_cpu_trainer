@@ -58,15 +58,15 @@ def setup_logger(config, name='MLPTrainer'):
     
     # Console handler
     ch = logging.StreamHandler(sys.stdout)
-        log_path = os.path.join(log_dir, f'{name}.log')
-        # Clear existing log file
-        with open(log_path, 'w') as f:
-            # Write header
-            f.write(f"=== {name} Log ===\n")
-            f.write(f"Started: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write("=" * 50 + "\n\n")
-        fh = logging.FileHandler(log_path)
-        fh.setLevel(getattr(logging, config['logging']['file_level']))
+    log_path = os.path.join(log_dir, f'{name}.log')
+    # Clear existing log file
+    with open(log_path, 'w') as f:
+        # Write header
+        f.write(f"=== {name} Log ===\n")
+        f.write(f"Started: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("=" * 50 + "\n\n")
+    fh = logging.FileHandler(log_path)
+    fh.setLevel(getattr(logging, config['logging']['file_level']))
     
     # Console handler
     ch = logging.StreamHandler(sys.stdout)
