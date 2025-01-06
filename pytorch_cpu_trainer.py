@@ -261,6 +261,9 @@ class PyTorchTrainer:
                     
                 accumulated_loss = 0
             
+            # Accumulate total loss properly
+            total_loss += loss.item() * self.grad_accum_steps
+            
             # Update metrics
             with torch.no_grad():
                 _, predicted = torch.max(outputs.data, 1)
@@ -268,7 +271,12 @@ class PyTorchTrainer:
                 correct += (predicted == batch_y).sum().item()
                 all_preds.extend(predicted.cpu().numpy())
                 all_labels.extend(batch_y.cpu().numpy())
+            
+            # Memory cleanup
+            del outputs, loss
+            torch.cuda.empty_cache() if torch.cuda.is_available() else gc.collect()
         
+        # Calculate metrics properly
         accuracy = correct / total if total > 0 else 0.0
         f1 = f1_score(all_labels, all_preds, average='weighted') if len(all_preds) > 0 else 0.0
         return total_loss / len(train_loader), accuracy, f1
@@ -309,7 +317,8 @@ class PyTorchTrainer:
             accuracy = 0.0
             f1 = 0.0
         
-        return total_loss / len(val_loader), accuracy, f1
+        avg_loss = total_loss / len(val_loader) if len(val_loader) > 0 else float('inf')
+        return avg_loss, accuracy, f1
 
     def train(self, train_loader, val_loader, epochs, metric='accuracy'):
         """Trains the model for specified number of epochs. 
@@ -863,19 +872,24 @@ def main():
     
     logger.info(f"Using {optimal_workers} worker processes for data loading")
     
-    # Calculate batch size that divides dataset size evenly
-    base_batch_size = config['training']['batch_size']
+    # Calculate consistent batch size
+    min_dataset_size = min(len(train_dataset), len(val_dataset))
+    batch_size = min(
+        config['training']['batch_size'],
+        min_dataset_size // 8  # Ensure at least 8 batches for stable training
+    )
+    # Round to nearest power of 2 for better performance
+    batch_size = 2 ** int(np.log2(batch_size))
+    batch_size = max(32, batch_size)  # Minimum batch size of 32 for stable BatchNorm
     
-    # Ensure batch size is appropriate for batch norm
-    effective_batch_size = max(32, min(base_batch_size, len(train_dataset) // 8))
-    logger.info(f"Using batch size: {effective_batch_size}")
+    logger.info(f"Using fixed batch size: {batch_size} for both training and validation")
     
-    # Safe DataLoader configuration for 2D data
+    # Safe DataLoader configuration with uniform batch size
     dataloader_kwargs = {
-        'batch_size': effective_batch_size,
+        'batch_size': batch_size,
         'num_workers': optimal_workers,
         'pin_memory': False,  # False for CPU training
-        'drop_last': True,    # Always true for consistent batch norm
+        'drop_last': True,    # Must be True for consistent batch norm
         'shuffle': True       # Only for training
     }
     
@@ -885,18 +899,25 @@ def main():
             'prefetch_factor': 2
         })
     
-    # Create data loaders with fixed batch size
-    train_loader = DataLoader(
-        train_dataset,
-        **dataloader_kwargs
-    )
-    
-    # Validation loader - same settings but no shuffle
+    # Create data loaders
+    train_loader = DataLoader(train_dataset, **dataloader_kwargs)
     val_loader = DataLoader(
         val_dataset,
-        **{**dataloader_kwargs, 'shuffle': False}
+        **{**dataloader_kwargs, 'shuffle': False}  # Only difference is shuffle=False
     )
     
+    # Verify batch sizes
+    if len(train_loader.dataset) % batch_size != 0:
+        logger.warning(
+            f"Training set size ({len(train_loader.dataset)}) is not divisible by "
+            f"batch size ({batch_size}). Some samples will be dropped."
+        )
+    if len(val_loader.dataset) % batch_size != 0:
+        logger.warning(
+            f"Validation set size ({len(val_loader.dataset)}) is not divisible by "
+            f"batch size ({batch_size}). Some samples will be dropped."
+        )
+
     # Verify we have enough batches
     min_batches = 5  # Minimum number of batches for stable training
     if len(train_loader) < min_batches:
@@ -906,7 +927,7 @@ def main():
         )
     
     logger.info(
-        f"DataLoaders created with fixed batch size {effective_batch_size}:\n"
+        f"DataLoaders created with fixed batch size {batch_size}:\n"
         f"Train samples: {len(train_dataset)}, batches: {len(train_loader)}\n"
         f"Val samples: {len(val_dataset)}, batches: {len(val_loader)}"
     )
