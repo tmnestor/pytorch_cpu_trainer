@@ -1,128 +1,114 @@
 # PyTorch CPU Trainer
 
-A high-performance PyTorch training framework optimized for CPU environments, featuring automated hyperparameter tuning, CPU-specific optimizations, and robust error handling.
+A high-performance PyTorch training framework optimized for CPU environments with automated hyperparameter tuning and CPU-specific optimizations.
 
 ## Features
-
 - CPU-optimized training with Intel Extensions for PyTorch (IPEX)
-- Automated hyperparameter tuning using Optuna
-- Stochastic Weight Averaging (SWA) support
-- Learning rate warmup and scheduling
-- Label smoothing
-- Gradient accumulation
-- Early stopping and pruning
-- Comprehensive logging system
-- Residual connections in MLP architecture
+- Automated hyperparameter tuning with Optuna
+- Built-in performance features:
+  - Stochastic Weight Averaging (SWA)
+  - Learning rate warmup and scheduling
+  - Label smoothing
+  - Gradient accumulation
+  - Early stopping and pruning
+  - Mixed precision with BFloat16 (when available)
+- MLP architecture with residual connections
+- SQLite-based experiment tracking
 
-## Requirements
+## Installation
 
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Clone repository
+git clone https://github.com/yourusername/pytorch_cpu_trainer.git
+cd pytorch_cpu_trainer
 ```
-torch
-intel_extension_for_pytorch
-optuna
-pandas
-numpy
-pyyaml
-tqdm
-scikit-learn
-psutil
-py-cpuinfo
-seaborn
-matplotlib
+
+## Quick Start
+
+1. Prepare your data:
+```bash
+# Place your CSV files in the input directory
+mkdir -p pytorch_cpu_trainer/input_data
+cp train.csv pytorch_cpu_trainer/input_data/
+cp val.csv pytorch_cpu_trainer/input_data/
+```
+
+2. Run training:
+```bash
+# First run - uses original defaults
+python run.py --mode train --config config.yaml
+
+# Second run - automatically uses averaged best parameters
+python run.py --mode train --config config.yaml
+
+# Force retrain with new parameters
+python run.py --mode train --config config.yaml --retrain
+```
+
+3. Run inference:
+```bash
+python run.py --mode inference --config config.yaml
 ```
 
 ## Project Structure
-
 ```
 pytorch_cpu_trainer/
-├── pytorch_cpu_trainer.py  # Main training script
-├── config.yaml            # Configuration file
-├── input_data/           # Data directory
+├── run.py                 # Main entry point
+├── config.yaml           # Configuration file
+├── pytorch_cpu_trainer/  # Core package
+│   ├── models.py        # Model architectures
+│   ├── optimizers.py    # CPU optimizations
+│   ├── trainers/       # Training logic
+│   └── tuners/         # Hyperparameter tuning
+├── input_data/          # Data directory
 │   ├── train.csv
 │   └── val.csv
-├── logs/                 # Logging directory
-└── checkpoints/          # Model checkpoints
+├── logs/               # Logging output
+└── checkpoints/        # Model checkpoints
 ```
 
 ## Configuration
 
-The `config.yaml` file contains all configurable parameters:
+Key sections in `config.yaml`:
+```yaml
+data:
+  train_path: pytorch_cpu_trainer/input_data/train.csv
+  val_path: pytorch_cpu_trainer/input_data/val.csv
 
-- Model architecture
-- Training parameters
-- CPU optimization settings
-- Logging configuration
-- Data paths
-- Hyperparameter tuning settings
-
-## Usage
-
-1. Prepare your data in CSV format with features and a target column
-2. Update the config.yaml file with your settings
-3. Run the trainer:
-
-```bash
-python pytorch_cpu_trainer.py
+training:
+  batch_size: 128
+  epochs: 10
+  optimizer_choice: Adam
+  device: cpu
+  
+cpu_optimization:
+  enable_mkldnn: true
+  num_threads: auto
+  use_bfloat16: true
 ```
 
-## CPU Optimizations
+## Experiment Tracking
 
-The trainer includes several CPU-specific optimizations:
+View training history:
+```bash
+sqlite3 pytorch_cpu_trainer/checkpoints/model_history.db
 
-- Automatic thread configuration
-- MKL-DNN/oneDNN support
-- BFloat16 mixed precision (when supported)
-- IPEX optimizations
-- Memory format optimization
-- JIT compilation
-
-## Hyperparameter Tuning
-
-The framework uses Optuna for automated hyperparameter optimization:
-
-- Network architecture (number and size of layers)
-- Learning rate
-- Dropout rate
-- Batch normalization
-- Weight decay
-
-## Monitoring
-
-Training progress is monitored through:
-
-- Comprehensive logging
-- Learning curves visualization
-- F1-score and accuracy metrics
-- CPU resource utilization
-
-## Model Architecture
-
-The MLP classifier includes:
-
-- Configurable hidden layers
-- Residual connections
-- Batch normalization
-- Dropout regularization
-- GELU activation
-
-## Error Handling
-
-Robust error handling for:
-
-- Data validation
-- Model initialization
-- Training process
-- Hyperparameter tuning
-- Resource management
-
-## Contributing
-
-Feel free to submit issues and pull requests.
-
-## License
-
-MIT License
+# Show all experiments
+SELECT 
+    datetime(timestamp) as date,
+    metric_value as score,
+    json_extract(architecture, '$.hidden_layers') as layers
+FROM model_experiments 
+ORDER BY metric_value DESC;
+```
 
 ## Contact
 
 For questions and feedback, please open an issue in the repository.
+
+## License
+
+MIT License

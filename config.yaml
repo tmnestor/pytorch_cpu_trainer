@@ -1,0 +1,119 @@
+best_model:
+  best_metric_name: f1_score
+  best_metric_value: 0.3176470588235294
+  dropout_rate: 0.22550344056280658
+  hidden_layers:
+  - 322
+  - 322
+  layer_width: 322
+  learning_rate: 0.0005457093876274264
+  n_layers: 2
+  use_batch_norm: true
+  weight_decay: 0.0
+data:
+  target_column: target
+  train_path: pytorch_cpu_trainer/input_data/train.csv
+  val_path: pytorch_cpu_trainer/input_data/val.csv
+default_model:
+  dropout_rate: 0.34983658347627855
+  hidden_layers:
+  - 408
+  - 408
+  - 408
+  - 408
+  learning_rate: 0.013906404646658939
+  use_batch_norm: false
+  weight_decay: 0.00010671046652103071
+logging:
+  console_level: WARNING
+  directory: logs
+  file_level: INFO
+  handlers:
+    cpu_optimization:
+      filename: cpu_optimization.log
+      level: DEBUG
+    hyperparameter_tuning:
+      filename: hyperparameter_tuning.log
+      level: INFO
+    mlptrainer:
+      filename: mlptrainer.log
+      level: INFO
+model:
+  history_db: pytorch_cpu_trainer/checkpoints/model_history.db
+  input_size: 7
+  num_classes: 5
+  save_path: pytorch_cpu_trainer/checkpoints/model.pt
+optimization:
+  early_stopping:
+    min_delta: 0.001
+    patience: 10
+  n_trials: 50
+  pruning:
+    deterioration_threshold: 0.3
+    min_trials_complete: 5
+    warm_up_epochs: 3
+paths:
+  root: .
+  subdirs:
+    checkpoints: pytorch_cpu_trainer/checkpoints
+    data: pytorch_cpu_trainer/input_data
+    figures: pytorch_cpu_trainer/figures
+    logs: pytorch_cpu_trainer/logs
+training:
+  batch_size: 128
+  cpu_optimization:
+    enable_mkldnn: true
+    jit_compile: true
+    num_threads: auto
+    use_bfloat16: true
+  dataloader:
+    drop_last: true
+    num_workers: auto
+    persistent_workers: true
+    pin_memory: false
+    prefetch_factor: 2
+  device: cpu
+  epochs: 10
+  label_smoothing:
+    enabled: true
+    factor: 0.1
+  loss_function: CrossEntropyLoss
+  memory_management:
+    optimization:
+      grad_accumulation:
+        enabled: true
+        max_steps: 16
+  optimization_metric: f1_score
+  optimizer_choice: Adam
+  optimizer_params:
+    Adam:
+      betas:
+      - 0.9
+      - 0.999
+      eps: 1.0e-08
+      lr: 0.0001
+  performance:
+    batch_size_multiplier: 1
+    enable_mkldnn: true
+    grad_accum_steps: 4
+    memory_fraction: 0.95
+    num_workers: 8
+    persistent_workers: true
+    pin_memory: false
+    prefetch_factor: 2
+  scheduler:
+    params:
+      div_factor: 25.0
+      final_div_factor: 1e4
+      max_lr_factor: 10.0
+      pct_start: 0.3
+    type: OneCycleLR
+  seed: 42
+  swa:
+    enabled: true
+    lr: 0.001
+    start_epoch: 75
+  warmup:
+    enabled: true
+    initial_lr_factor: 0.01
+    max_steps: 1000
