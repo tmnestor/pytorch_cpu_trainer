@@ -22,7 +22,7 @@ A high-performance PyTorch training framework optimized for CPU environments wit
 pip install -r requirements.txt
 
 # Clone repository
-git clone https://github.com/yourusername/pytorch_cpu_trainer.git
+git clone https://github.com/tmnestor/pytorch_cpu_trainer.git
 cd pytorch_cpu_trainer
 ```
 
