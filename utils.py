@@ -48,31 +48,19 @@ def get_path(config, path_key):
     
     Args:
         config: The configuration dictionary
-        path_key: String like 'model.history_db' or 'logging.directory'
+        path_key: String like 'model.save_path' or 'data.train_path'
     
     Returns:
         Absolute path with root directory prefixed
     """
-    # Get the template path
+    # Get the path
     keys = path_key.split('.')
-    template = config
+    path = config
     for key in keys:
-        template = template[key]
+        path = path[key]
     
-    # Get root and subdirs
-    root_path = config['paths']['root']
-    subdirs = config['paths']['subdirs']
-    
-    # First create the real subdirectories if they don't exist
-    for subdir_name, subdir_path in subdirs.items():
-        full_subdir_path = os.path.join(root_path, subdir_path)
-        os.makedirs(full_subdir_path, exist_ok=True)
-    
-    # Now replace placeholders with actual paths
-    for subdir_name, subdir_path in subdirs.items():
-        template = template.replace(f'{{{subdir_name}}}', subdir_path)
-    
-    return os.path.join(root_path, template)
+    # Join with root path
+    return os.path.join(config['paths']['root'], path)
 
 def ensure_path_exists(path, is_file=True):
     """Create directory structure for a path."""
