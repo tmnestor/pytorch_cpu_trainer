@@ -892,28 +892,28 @@ def main():
     # Parse command line arguments
     args = parse_args()
     
-    # Load configuration
+    # Load configuration and immediately add config path
     config = load_config(args.config)
-    config['config_path'] = args.config  # Store config path in config
+    config['config_path'] = args.config  # Add this BEFORE any other operations
     
-    # Create necessary directories first
+    # Create necessary directories
     os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
     os.makedirs(config['logging']['directory'], exist_ok=True)
     os.makedirs('input_data', exist_ok=True)
     os.makedirs('figures', exist_ok=True)
     
-    # Set up main logger BEFORE using it
+    # Set up logger AFTER adding config_path
     logger = setup_logger(config, 'MLPTrainer')
     logger.info(f"Starting in {args.mode} mode...")
     
-    # Now we can use logger for update_default_config
+    # Update config defaults
     logger.info("Checking for historical best configurations")
     update_default_config(args.config)
     
-    # Reload config after update
+    # Reload config but preserve config_path
+    config_path = config['config_path']  # Save config_path
     config = load_config(args.config)
-    logger.info("Configuration loaded with defaults:" + 
-                f"\ndefault_model: {config.get('default_model', 'Not found')}")
+    config['config_path'] = config_path  # Restore config_path after reload
     
     # Initialize CPU optimization early
     cpu_optimizer = CPUOptimizer(config)
