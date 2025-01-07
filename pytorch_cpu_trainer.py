@@ -425,9 +425,11 @@ class HyperparameterTuner:
         self.best_params = None
         self.logger = setup_logger(config, 'hyperparameter_tuning')
         os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
-        self.config_path = config.get('config_path')  # Store config path
+        if 'config_path' not in config:
+            raise ValueError("config_path must be set in config dictionary")
+        self.config_path = config['config_path']  # Get from config dict
         self.history = ModelHistory(self.config_path)
-
+        
     def save_best_model(self, model, optimizer, trial_value, params):
         """Save the best model and its metadata."""
         checkpoint = {
