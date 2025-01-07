@@ -896,6 +896,12 @@ def main():
     # Load configuration and add config path
     config = load_config(args.config)
     config['config_path'] = args.config
+
+    # Create all required directories first
+    root_path = config['paths']['root']
+    for subdir_name, subdir_path in config['paths']['subdirs'].items():
+        full_path = os.path.join(root_path, subdir_path)
+        os.makedirs(full_path, exist_ok=True)
     
     # Create necessary directories using resolved paths
     ensure_path_exists(get_path(config, 'model.save_path'))
