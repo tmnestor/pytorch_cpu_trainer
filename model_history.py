@@ -10,16 +10,18 @@ class ModelHistory:
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
         
-        self.db_path = config['model']['history_db']
+        # Resolve the database path using the config root path
+        root_path = config['paths']['root']
+        db_path = config['model']['history_db']
+        for subdir, value in config['paths']['subdirs'].items():
+            db_path = db_path.replace(f'{{{subdir}}}', value)
+        self.db_path = os.path.join(root_path, db_path)
         self.config_path = config_path
         
-        # Ensure checkpoint directory exists first
-        os.makedirs('checkpoints', exist_ok=True)  # Create base directory
-        
-        # Then ensure database directory exists
-        db_dir = os.path.dirname(self.db_path)
-        if db_dir:
-            os.makedirs(db_dir, exist_ok=True)
+        # Create directories only if database doesn't exist
+        if not os.path.exists(self.db_path):
+            # Ensure checkpoint directory exists first
+            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
             
         # Setup logging
         self.logger = logging.getLogger('ModelHistory')
