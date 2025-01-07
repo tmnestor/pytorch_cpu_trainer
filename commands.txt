@@ -6,3 +6,38 @@ python pytorch_cpu_trainer.py --mode train
 
 # Force retrain with new defaults
 python pytorch_cpu_trainer.py --mode train --retrain
+
+
+
+# Check contents of model_history.db
+sqlite3 checkpoints/model_history.db
+
+# Once in SQLite prompt, run these commands:
+# Show all tables
+.tables
+
+# Show table schema
+.schema model_experiments
+
+# View all experiments, ordered by performance
+SELECT 
+    datetime(timestamp) as date,
+    metric_value as score,
+    json_extract(architecture, '$.hidden_layers') as layers,
+    json_extract(hyperparameters, '$.learning_rate') as lr,
+    json_extract(hyperparameters, '$.dropout_rate') as dropout
+FROM model_experiments 
+ORDER BY metric_value DESC;
+
+# View best result only
+SELECT 
+    datetime(timestamp) as date,
+    metric_value as score,
+    json_extract(architecture, '$.hidden_layers') as layers,
+    json_extract(hyperparameters, '$.learning_rate') as lr
+FROM model_experiments 
+ORDER BY metric_value DESC 
+LIMIT 1;
+
+# Exit SQLite
+.quit

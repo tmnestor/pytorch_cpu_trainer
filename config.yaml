@@ -1,14 +1,12 @@
 best_model:
   best_metric_name: f1_score
-  best_metric_value: 0.3764705882352941
-  dropout_rate: 0.38309721853673
+  best_metric_value: 0.37058823529411766
+  dropout_rate: 0.21605401943910318
   hidden_layers:
-  - 314
-  - 314
-  - 314
-  layer_width: 314
-  learning_rate: 0.0010962970863396323
-  n_layers: 3
+  - 303
+  layer_width: 303
+  learning_rate: 3.125677655165925e-05
+  n_layers: 1
   use_batch_norm: true
   weight_decay: 0.0
 data:
@@ -16,14 +14,15 @@ data:
   train_path: input_data/train.csv
   val_path: input_data/val.csv
 default_model:
-  dropout_rate: 0.38309721853673
+  dropout_rate: 0.3545223013605189
   hidden_layers:
-  - 314
-  - 314
-  - 314
-  learning_rate: 0.0010962970863396323
+  - 308
+  - 296
+  - 296
+  - 241
+  learning_rate: 0.0009999896300108872
   use_batch_norm: true
-  weight_decay: 0.0
+  weight_decay: 0.0008696861721316331
 logging:
   console_level: WARNING
   directory: logs
@@ -39,7 +38,7 @@ logging:
       filename: mlptrainer.log
       level: INFO
 model:
-  history_db: checkpoints/model_history.db  # Ensure this matches the directory structure
+  history_db: checkpoints/model_history.db
   input_size: 7
   num_classes: 5
   save_path: checkpoints/model.pt

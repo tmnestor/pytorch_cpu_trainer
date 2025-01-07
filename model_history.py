@@ -13,9 +13,12 @@ class ModelHistory:
         self.db_path = config['model']['history_db']
         self.config_path = config_path
         
-        # Ensure directory exists
+        # Ensure checkpoint directory exists first
+        os.makedirs('checkpoints', exist_ok=True)  # Create base directory
+        
+        # Then ensure database directory exists
         db_dir = os.path.dirname(self.db_path)
-        if db_dir:  # Only create if there's a directory component
+        if db_dir:
             os.makedirs(db_dir, exist_ok=True)
             
         # Setup logging
@@ -115,14 +118,24 @@ class ModelHistory:
         """Get the best performing architecture based on historical data."""
         self.logger.info(f"Fetching best architecture for {metric_name}")
         with sqlite3.connect(self.db_path) as conn:
+            # First get the best metric value
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT architecture, metric_value
+                SELECT MAX(metric_value) 
+                FROM model_experiments 
+                WHERE metric_name = ?
+            ''', (metric_name,))
+            best_value = cursor.fetchone()[0]
+            
+            # Then get the most recent architectures with that value
+            cursor.execute('''
+                SELECT architecture, metric_value, timestamp
                 FROM model_experiments
                 WHERE metric_name = ?
-                ORDER BY metric_value DESC
+                AND metric_value >= ?
+                ORDER BY timestamp DESC
                 LIMIT ?
-            ''', (metric_name, n_best))
+            ''', (metric_name, best_value * 0.95, n_best))  # Allow 5% margin from best
             
             results = cursor.fetchall()
             
@@ -130,8 +143,7 @@ class ModelHistory:
                 self.logger.warning("No historical data found")
                 return None
                 
-            self.logger.info(f"Found {len(results)} previous results")
-            # Aggregate architectures to find most common successful configuration
+            self.logger.info(f"Found {len(results)} previous results near best value of {best_value:.4f}")
             architectures = [json.loads(row[0]) for row in results]
             avg_hidden_layers = []
             
@@ -152,17 +164,34 @@ class ModelHistory:
     def get_best_hyperparameters(self, metric_name='f1_score', n_best=5):
         """Get the best performing hyperparameters based on historical data."""
         with sqlite3.connect(self.db_path) as conn:
+            # Get best metric value first
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT hyperparameters
+                SELECT MAX(metric_value) 
+                FROM model_experiments 
+                WHERE metric_name = ?
+            ''', (metric_name,))
+            best_value = cursor.fetchone()[0]
+            
+            # Get most recent hyperparameters near the best value
+            cursor.execute('''
+                SELECT hyperparameters, metric_value, timestamp
                 FROM model_experiments
                 WHERE metric_name = ?
-                ORDER BY metric_value DESC
+                AND metric_value >= ?
+                ORDER BY timestamp DESC
                 LIMIT ?
-            ''', (metric_name, n_best))
+            ''', (metric_name, best_value * 0.95, n_best))
             
             results = cursor.fetchall()
             
+            if not results:
+                return None
+            
+            self.logger.info(f"Using {len(results)} best hyperparameter sets near value {best_value:.4f}")    
+            hyperparams_list = [json.loads(row[0]) for row in results]
+            # ...rest of existing averaging code...
+
             if not results:
                 return None
                 
