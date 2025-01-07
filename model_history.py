@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 import yaml
 import logging
-from utils import get_path, ensure_path_exists
+from .utils import get_path, ensure_path_exists  # Update to relative import
 
 class ModelHistory:
     def __init__(self, config_path):
