@@ -53,7 +53,7 @@ optimization:
     min_trials_complete: 5
     warm_up_epochs: 3
 paths:
-  root: './workspace'  # Default root directory for development
+  root: '.'  # Default root directory for development
   subdirs:
     checkpoints: 'checkpoints'
     logs: 'logs'
