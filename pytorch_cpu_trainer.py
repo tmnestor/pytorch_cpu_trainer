@@ -39,36 +39,31 @@ def setup_logger(config, name='MLPTrainer'):
     log_dir = config['logging']['directory']
     os.makedirs(log_dir, exist_ok=True)
     
-    # Get the logger
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)  # Set to DEBUG to catch all levels
+    # Get the logger - use lowercase name for consistency
+    logger_name = name.lower()
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.DEBUG)
     
     # Clear any existing handlers
     logger.handlers = []
     
     # File handler - use component specific config if available
-    if name.lower() in config['logging']['handlers']:
-        handler_config = config['logging']['handlers'][name.lower()]
+    if logger_name in config['logging']['handlers']:
+        handler_config = config['logging']['handlers'][logger_name]
         log_path = os.path.join(log_dir, handler_config['filename'])
         fh = logging.FileHandler(log_path)
         fh.setLevel(getattr(logging, handler_config['level']))
     else:
-        # Default file handler
-        log_path = os.path.join(log_dir, f'{name}.log')
+        # Default file handler - always use lowercase for filename
+        log_path = os.path.join(log_dir, f'{logger_name}.log')
         fh = logging.FileHandler(log_path)
         fh.setLevel(getattr(logging, config['logging']['file_level']))
     
-    # Console handler
-    ch = logging.StreamHandler(sys.stdout)
-    log_path = os.path.join(log_dir, f'{name}.log')
     # Clear existing log file
     with open(log_path, 'w') as f:
-        # Write header
         f.write(f"=== {name} Log ===\n")
         f.write(f"Started: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write("=" * 50 + "\n\n")
-    fh = logging.FileHandler(log_path)
-    fh.setLevel(getattr(logging, config['logging']['file_level']))
     
     # Console handler
     ch = logging.StreamHandler(sys.stdout)

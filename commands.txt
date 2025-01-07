@@ -1,0 +1,8 @@
+# First run - uses original defaults
+python pytorch_cpu_trainer.py --mode train
+
+# Second run - automatically uses averaged best parameters from history
+python pytorch_cpu_trainer.py --mode train
+
+# Force retrain with new defaults
+python pytorch_cpu_trainer.py --mode train --retrain
