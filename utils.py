@@ -1,4 +1,46 @@
 import os
+import logging
+
+def setup_logger(config, name='MLPTrainer'):
+    """Set up logging with both file and console handlers."""
+    # Create logging directory if it doesn't exist
+    log_dir = config['logging']['directory']
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # Get the logger - use lowercase name for consistency
+    logger_name = name.lower()
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.DEBUG)
+    
+    # Clear any existing handlers
+    logger.handlers = []
+    
+    # File handler - use component specific config if available
+    if logger_name in config['logging']['handlers']:
+        handler_config = config['logging']['handlers'][logger_name]
+        log_path = os.path.join(log_dir, handler_config['filename'])
+        fh = logging.FileHandler(log_path)
+        fh.setLevel(getattr(logging, handler_config['level']))
+    else:
+        # Default file handler - always use lowercase for filename
+        log_path = os.path.join(log_dir, f'{logger_name}.log')
+        fh = logging.FileHandler(log_path)
+        fh.setLevel(getattr(logging, config['logging']['file_level']))
+    
+    # Console handler
+    ch = logging.StreamHandler()
+    ch.setLevel(getattr(logging, config['logging']['console_level']))
+    
+    # Formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    
+    # Add handlers
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    
+    return logger
 
 def get_path(config, path_key):
     """
