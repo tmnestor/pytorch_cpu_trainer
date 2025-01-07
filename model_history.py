@@ -212,6 +212,19 @@ class ModelHistory:
             
             return avg_hyperparams
 
+    def clear_database(self):
+        """Clear all records from the database."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM model_experiments')
+                conn.commit()
+            self.logger.info("Database cleared successfully")
+            self._log_database_state()
+        except Exception as e:
+            self.logger.error(f"Error clearing database: {e}")
+            raise
+
 def update_default_config(config_path):
     """Update the default configuration with historical best performers."""
     logger = logging.getLogger('ModelHistory')

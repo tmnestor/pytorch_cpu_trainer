@@ -425,6 +425,7 @@ class HyperparameterTuner:
         self.best_params = None
         self.logger = setup_logger(config, 'hyperparameter_tuning')
         os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
+        self.history = ModelHistory(config_path)  # Add this line
     
     def save_best_model(self, model, optimizer, trial_value, params):
         """Save the best model and its metadata."""
@@ -552,6 +553,7 @@ class HyperparameterTuner:
         return best_metric
     
     def tune(self, train_loader, val_loader):
+        """Run hyperparameter optimization and save best result to history."""
         self.logger.info("Starting hyperparameter tuning...")
         study = optuna.create_study(
             direction="maximize",
@@ -561,6 +563,14 @@ class HyperparameterTuner:
         study.optimize(
             lambda trial: self.objective(trial, train_loader, val_loader),
             n_trials=self.config['optimization']['n_trials']
+        )
+        
+        # Save the best trial to database immediately after tuning
+        self.logger.info(f"Best trial value: {study.best_trial.value:.4f}")
+        self.history.save_experiment(
+            self.config_path,
+            study.best_trial.value,
+            self.config['training']['optimization_metric']
         )
         
         return study.best_trial, study.best_params
@@ -958,6 +968,10 @@ def main():
             best_trial, best_params = tuner.tune(train_loader, val_loader)
             save_best_params_to_config(args.config, best_trial, best_params)
             config = load_config(args.config)
+            
+            # Remove this part since we now save during tuning
+            # history = ModelHistory(args.config)
+            # history.save_experiment(...)
         
         # Rest of the training code remains the same
         restored = restore_best_model(config)
