@@ -2,6 +2,50 @@ import os
 import torch
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
+import psutil
+import cpuinfo
+import intel_extension_for_pytorch as ipex
+from .utils import setup_logger
+
+class CPUOptimizer:
+    """Handles CPU-specific optimizations for PyTorch training."""
+    def __init__(self, config, model=None):
+        self.config = config
+        self.model = model
+        self.logger = setup_logger(config, 'cpu_optimization')
+        self.cpu_info = cpuinfo.get_cpu_info()
+        
+    def detect_cpu_features(self):
+        """Detect CPU features and capabilities."""
+        features = {
+            'processor': self.cpu_info.get('brand_raw', 'Unknown'),
+            'architecture': self.cpu_info.get('arch', 'Unknown'),
+            'cores': psutil.cpu_count(logical=False),
+            'threads': psutil.cpu_count(logical=True),
+            'avx512': 'avx512' in self.cpu_info.get('flags', []),
+            'avx2': 'avx2' in self.cpu_info.get('flags', []),
+            'mkl': hasattr(torch, 'backends') and hasattr(torch.backends, 'mkl') and torch.backends.mkl.is_available(),
+            'ipex': hasattr(torch, 'xpu') or hasattr(torch, 'ipex'),
+            'bf16_supported': hasattr(ipex, 'core') and ipex.core.onednn_has_bf16_support()
+        }
+        return features
+        
+    def configure_thread_settings(self):
+        """Configure thread settings before any PyTorch operations"""
+        if self.config['training']['cpu_optimization']['num_threads'] == 'auto':
+            num_threads = psutil.cpu_count(logical=True)
+        else:
+            num_threads = self.config['training']['cpu_optimization']['num_threads']
+            
+        # Set thread configurations
+        torch.set_num_threads(num_threads)
+        if hasattr(torch, 'set_num_interop_threads'):
+            torch.set_num_interop_threads(min(4, num_threads))
+            
+        # Pin CPU threads
+        os.environ['OMP_NUM_THREADS'] = str(num_threads)
+        os.environ['MKL_NUM_THREADS'] = str(num_threads)
+        return num_threads
 
 class CPUWarmupScheduler:
     def __init__(self, optimizer, warmup_steps, initial_lr, target_lr):
