@@ -1,3 +1,13 @@
+# Make executable
+chmod +x run.py
+
+# Run training
+./run.py --mode train --config config.yaml
+
+# Run inference
+./run.py --mode inference --config config.yaml
+
+
 python run_trainer.py --mode train --config config.yaml
 
 # Instead of running the file directly:
