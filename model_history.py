@@ -4,24 +4,20 @@ from datetime import datetime
 import os
 import yaml
 import logging
+from utils import get_path, ensure_path_exists
 
 class ModelHistory:
     def __init__(self, config_path):
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
         
-        # Resolve the database path using the config root path
-        root_path = config['paths']['root']
-        db_path = config['model']['history_db']
-        for subdir, value in config['paths']['subdirs'].items():
-            db_path = db_path.replace(f'{{{subdir}}}', value)
-        self.db_path = os.path.join(root_path, db_path)
+        # Use utils function to resolve the database path
+        self.db_path = get_path(config, 'model.history_db')
         self.config_path = config_path
         
         # Create directories only if database doesn't exist
         if not os.path.exists(self.db_path):
-            # Ensure checkpoint directory exists first
-            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+            ensure_path_exists(self.db_path)
             
         # Setup logging
         self.logger = logging.getLogger('ModelHistory')

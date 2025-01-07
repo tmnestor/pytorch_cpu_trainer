@@ -2,14 +2,14 @@ import os
 
 def get_path(config, path_key):
     """
-    Resolves a path from config using the root directory.
+    Resolves a path from config using the root directory and replaces placeholders.
     
     Args:
         config: The configuration dictionary
-        path_key: String like 'model.save_path' or 'logging.directory'
+        path_key: String like 'model.history_db' or 'logging.directory'
     
     Returns:
-        Absolute path with root directory prefixed
+        Absolute path with resolved placeholders
     """
     # Get the path template
     keys = path_key.split('.')
@@ -17,12 +17,18 @@ def get_path(config, path_key):
     for key in keys:
         template = template[key]
         
-    # Replace directory placeholders
-    for subdir, value in config['paths']['subdirs'].items():
-        template = template.replace(f'{{{subdir}}}', value)
+    # Replace all placeholders
+    root_path = config['paths']['root']
+    subdirs = config['paths']['subdirs']
+    
+    # Replace each placeholder with its actual path
+    for subdir_name, subdir_path in subdirs.items():
+        placeholder = f'{{{subdir_name}}}'
+        if placeholder in template:
+            template = template.replace(placeholder, subdir_path)
     
     # Join with root path
-    return os.path.join(config['paths']['root'], template)
+    return os.path.join(root_path, template)
 
 def ensure_path_exists(path, is_file=True):
     """Create directory structure for a path."""
