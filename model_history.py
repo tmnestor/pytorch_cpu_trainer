@@ -118,8 +118,14 @@ class ModelHistory:
         """Get the best performing architecture based on historical data."""
         self.logger.info(f"Fetching best architecture for {metric_name}")
         with sqlite3.connect(self.db_path) as conn:
-            # First get the best metric value
+            # First check if we have any data
             cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM model_experiments')
+            if cursor.fetchone()[0] == 0:
+                self.logger.warning("Empty database - no historical data")
+                return None
+
+            # Get the best metric value
             cursor.execute('''
                 SELECT MAX(metric_value) 
                 FROM model_experiments 
@@ -127,7 +133,12 @@ class ModelHistory:
             ''', (metric_name,))
             best_value = cursor.fetchone()[0]
             
-            # Then get the most recent architectures with that value
+            if best_value is None:
+                self.logger.warning(f"No experiments found with metric {metric_name}")
+                return None
+                
+            # Get architectures within 5% of best value
+            margin = best_value * 0.95
             cursor.execute('''
                 SELECT architecture, metric_value, timestamp
                 FROM model_experiments
@@ -135,7 +146,7 @@ class ModelHistory:
                 AND metric_value >= ?
                 ORDER BY timestamp DESC
                 LIMIT ?
-            ''', (metric_name, best_value * 0.95, n_best))  # Allow 5% margin from best
+            ''', (metric_name, margin, n_best))
             
             results = cursor.fetchall()
             
@@ -164,8 +175,14 @@ class ModelHistory:
     def get_best_hyperparameters(self, metric_name='f1_score', n_best=5):
         """Get the best performing hyperparameters based on historical data."""
         with sqlite3.connect(self.db_path) as conn:
-            # Get best metric value first
+            # First check if we have any data
             cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM model_experiments')
+            if cursor.fetchone()[0] == 0:
+                self.logger.warning("Empty database - no historical data")
+                return None
+
+            # Get the best metric value
             cursor.execute('''
                 SELECT MAX(metric_value) 
                 FROM model_experiments 
@@ -173,6 +190,11 @@ class ModelHistory:
             ''', (metric_name,))
             best_value = cursor.fetchone()[0]
             
+            if best_value is None:
+                self.logger.warning(f"No experiments found with metric {metric_name}")
+                return None
+
+            margin = best_value * 0.95
             # Get most recent hyperparameters near the best value
             cursor.execute('''
                 SELECT hyperparameters, metric_value, timestamp
@@ -181,7 +203,7 @@ class ModelHistory:
                 AND metric_value >= ?
                 ORDER BY timestamp DESC
                 LIMIT ?
-            ''', (metric_name, best_value * 0.95, n_best))
+            ''', (metric_name, margin, n_best))
             
             results = cursor.fetchall()
             
