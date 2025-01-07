@@ -419,14 +419,15 @@ class PyTorchTrainer:
 class HyperparameterTuner:
     def __init__(self, config):
         self.config = config
-        self.best_trial_value = float('-inf')  # Fix syntax error here
+        self.best_trial_value = float('-inf')
         self.best_model_state = None
         self.best_optimizer_state = None
         self.best_params = None
         self.logger = setup_logger(config, 'hyperparameter_tuning')
         os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
-        self.history = ModelHistory(config_path)  # Add this line
-    
+        self.config_path = config.get('config_path')  # Store config path
+        self.history = ModelHistory(self.config_path)
+
     def save_best_model(self, model, optimizer, trial_value, params):
         """Save the best model and its metadata."""
         checkpoint = {
@@ -891,6 +892,7 @@ def main():
     
     # Load configuration
     config = load_config(args.config)
+    config['config_path'] = args.config  # Store config path in config
     
     # Create necessary directories first
     os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
@@ -964,7 +966,7 @@ def main():
         
         if should_train:
             logger.info("Starting training process...")
-            tuner = HyperparameterTuner(config)
+            tuner = HyperparameterTuner(config)  # Now has access to config path
             best_trial, best_params = tuner.tune(train_loader, val_loader)
             save_best_params_to_config(args.config, best_trial, best_params)
             config = load_config(args.config)
