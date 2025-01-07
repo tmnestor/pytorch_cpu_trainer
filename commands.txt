@@ -1,3 +1,13 @@
+python run_trainer.py --mode train --config config.yaml
+
+# Instead of running the file directly:
+# python pytorch_cpu_trainer.py
+
+# Run using the module approach:
+python -m pytorch_cpu_trainer.pytorch_cpu_trainer --mode train --config config.yaml
+
+
+
 # First run - uses original defaults
 python pytorch_cpu_trainer.py --mode train
 

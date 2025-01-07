@@ -13,15 +13,13 @@ from torch.utils.data import Dataset, DataLoader
 import argparse  # Add missing import
 from sklearn.metrics import f1_score  # Add missing import
 
-# Remove old imports and add new ones
-from models import MLPClassifier, CustomDataset, LabelSmoothingLoss, restore_best_model
-from trainers.pytorch_trainer import PyTorchTrainer
-from optimizers import create_optimizer, create_scheduler, create_warmup_scheduler, CPUOptimizer  # Update imports
-from tuners.hyperparameter_tuner import HyperparameterTuner
-from model_history import ModelHistory, update_default_config
-from utils import get_path, ensure_path_exists, setup_logger
-
-# Add after existing imports
+# Use absolute imports for package
+from pytorch_cpu_trainer.models import MLPClassifier, CustomDataset, LabelSmoothingLoss, restore_best_model
+from pytorch_cpu_trainer.trainers import PyTorchTrainer
+from pytorch_cpu_trainer.optimizers import create_optimizer, create_scheduler, create_warmup_scheduler, CPUOptimizer
+from pytorch_cpu_trainer.tuners import HyperparameterTuner
+from pytorch_cpu_trainer.model_history import ModelHistory, update_default_config
+from pytorch_cpu_trainer.utils import get_path, ensure_path_exists, setup_logger
 
 def save_best_params_to_config(config_path, best_trial, best_params):
     """Save best parameters to config file."""

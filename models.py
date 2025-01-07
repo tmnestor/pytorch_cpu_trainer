@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 import yaml
-from .utils import setup_logger  # Fix import to be relative
+from .utils import setup_logger  # Use relative import
 
 class CustomDataset(Dataset):
     def __init__(self, df, target_column, batch_size=1000):
