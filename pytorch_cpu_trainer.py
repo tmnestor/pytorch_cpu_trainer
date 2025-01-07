@@ -25,6 +25,7 @@ import multiprocessing
 import torch.optim.swa_utils as swa_utils
 import argparse
 from model_history import ModelHistory, update_default_config
+from utils import get_path, ensure_path_exists
 
 
 def load_config(config_path):
@@ -892,15 +893,19 @@ def main():
     # Parse command line arguments
     args = parse_args()
     
-    # Load configuration and immediately add config path
+    # Load configuration and add config path
     config = load_config(args.config)
-    config['config_path'] = args.config  # Add this BEFORE any other operations
+    config['config_path'] = args.config
     
-    # Create necessary directories
-    os.makedirs(os.path.dirname(config['model']['save_path']), exist_ok=True)
-    os.makedirs(config['logging']['directory'], exist_ok=True)
-    os.makedirs('input_data', exist_ok=True)
-    os.makedirs('figures', exist_ok=True)
+    # Create necessary directories using resolved paths
+    ensure_path_exists(get_path(config, 'model.save_path'))
+    ensure_path_exists(get_path(config, 'logging.directory'))
+    ensure_path_exists(get_path(config, 'paths.subdirs.data'))
+    ensure_path_exists(get_path(config, 'paths.subdirs.figures'))
+    
+    # Update load paths
+    train_path = get_path(config, 'data.train_path')
+    val_path = get_path(config, 'data.val_path')
     
     # Set up logger AFTER adding config_path
     logger = setup_logger(config, 'MLPTrainer')
@@ -923,9 +928,6 @@ def main():
     set_seed(config['training']['seed'])
     
     # Load and validate data files
-    train_path = config['data']['train_path']
-    val_path = config['data']['val_path']
-    
     if not os.path.exists(train_path) or not os.path.exists(val_path):
         raise FileNotFoundError(f"Data files not found: {train_path} or {val_path}")
     

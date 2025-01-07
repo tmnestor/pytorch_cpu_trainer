@@ -1,31 +1,32 @@
 best_model:
   best_metric_name: f1_score
-  best_metric_value: 0.3941176470588235
-  dropout_rate: 0.21922342749102228
+  best_metric_value: 0.38823529411764707
+  dropout_rate: 0.34956668940354874
   hidden_layers:
-  - 173
-  - 173
-  layer_width: 173
-  learning_rate: 0.01669608817753412
-  n_layers: 2
+  - 318
+  - 318
+  - 318
+  - 318
+  layer_width: 318
+  learning_rate: 0.0014799950307724811
+  n_layers: 4
   use_batch_norm: true
   weight_decay: 0.0
 data:
   target_column: target
-  train_path: input_data/train.csv
-  val_path: input_data/val.csv
+  train_path: '{data}/train.csv'
+  val_path: '{data}/val.csv'
 default_model:
-  dropout_rate: 0.38309721853673
+  dropout_rate: 0.270831338699154
   hidden_layers:
-  - 314
-  - 314
-  - 314
-  learning_rate: 0.0010962970863396323
-  use_batch_norm: true
-  weight_decay: 0.0
+  - 215
+  - 215
+  learning_rate: 0.06480595568025307
+  use_batch_norm: false
+  weight_decay: 0.0009740286630576261
 logging:
   console_level: WARNING
-  directory: logs
+  directory: '{logs}'
   file_level: INFO
   handlers:
     cpu_optimization:
@@ -38,10 +39,10 @@ logging:
       filename: mlptrainer.log
       level: INFO
 model:
-  history_db: checkpoints/model_history.db
+  history_db: '{checkpoints}/model_history.db'
   input_size: 7
   num_classes: 5
-  save_path: checkpoints/model.pt
+  save_path: '{checkpoints}/model.pt'
 optimization:
   early_stopping:
     min_delta: 0.001
@@ -51,6 +52,13 @@ optimization:
     deterioration_threshold: 0.3
     min_trials_complete: 5
     warm_up_epochs: 3
+paths:
+  root: './workspace'  # Default root directory for development
+  subdirs:
+    checkpoints: 'checkpoints'
+    logs: 'logs'
+    data: 'input_data'
+    figures: 'figures'
 training:
   batch_size: 128
   cpu_optimization:
